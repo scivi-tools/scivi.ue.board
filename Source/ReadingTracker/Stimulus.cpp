@@ -9,6 +9,13 @@
 #include "Engine.h"
 #include "Json.h"
 #include "IXRTrackingSystem.h"
+#include "Engine/CanvasRenderTarget2D.h"
+#include "MotionControllerComponent.h"
+#include "ImageUtils.h"
+
+#include "IImageWrapperModule.h"
+#include "Misc/Base64.h"
+#include "GenericPlatform/GenericPlatformMath.h"
 
 
 AStimulus::AStimulus()
@@ -57,9 +64,12 @@ void AStimulus::BeginPlay()
             break;
         }
     }
-    m_mcRight->SetHiddenInGame(true, true);
+    if (m_mcRight)
+        m_mcRight->SetHiddenInGame(true, true);
 
-    SRanipalEye_Framework::Instance()->StartFramework(EyeVersion);
+    auto instance = SRanipalEye_Framework::Instance();
+    if (instance)
+    instance->StartFramework(EyeVersion);
 
     initWS();
 
@@ -92,7 +102,7 @@ void AStimulus::initWS()
 
     auto &ep = m_server.endpoint["^/ue4/?$"];
 
-    ep.on_message = [this](shared_ptr<WSServer::Connection> connection, shared_ptr<WSServer::InMessage> msg)
+    ep.on_message = [this](std::shared_ptr<WSServer::Connection> connection, std::shared_ptr<WSServer::InMessage> msg)
     {
         auto text = msg->string();
         TSharedPtr<FJsonObject> jsonParsed;
@@ -129,27 +139,27 @@ void AStimulus::initWS()
         }
     };
 
-    ep.on_open = [](shared_ptr<WSServer::Connection> connection)
+    ep.on_open = [](std::shared_ptr<WSServer::Connection> connection)
     {
         UE_LOG(LogTemp, Display, TEXT("WebSocket: Opened"));
     };
 
-    ep.on_close = [](shared_ptr<WSServer::Connection> connection, int status, const string &)
+    ep.on_close = [](std::shared_ptr<WSServer::Connection> connection, int status, const std::string &)
     {
         UE_LOG(LogTemp, Display, TEXT("WebSocket: Closed"));
     };
 
-    ep.on_handshake = [](shared_ptr<WSServer::Connection>, SimpleWeb::CaseInsensitiveMultimap &)
+    ep.on_handshake = [](std::shared_ptr<WSServer::Connection>, SimpleWeb::CaseInsensitiveMultimap &)
     {
         return SimpleWeb::StatusCode::information_switching_protocols;
     };
 
-    ep.on_error = [](shared_ptr<WSServer::Connection> connection, const SimpleWeb::error_code &ec)
+    ep.on_error = [](std::shared_ptr<WSServer::Connection> connection, const SimpleWeb::error_code &ec)
     {
         UE_LOG(LogTemp, Warning, TEXT("WebSocket: Error"));
     };
 
-    m_serverThread = thread(&AStimulus::wsRun, this);
+    m_serverThread = std::thread(&AStimulus::wsRun, this);
 }
 
 void AStimulus::wsRun()
@@ -602,13 +612,13 @@ void AStimulus::Tick(float DeltaTime)
 #endif // COLLECCT_ANGULAR_ERROR
 
         FDateTime t = FDateTime::Now();
-        string msg = to_string(t.ToUnixTimestamp() * 1000 + t.GetMillisecond()) + " " +
-                     to_string(uv.X) + " " + to_string(uv.Y) + " " +
-                     to_string(gazeOrigin.X) + " " + to_string(gazeOrigin.Y) + " " + to_string(gazeOrigin.Z) + " " +
-                     to_string(correctedGazeTarget.X) + " " + to_string(correctedGazeTarget.Y) + " " + to_string(correctedGazeTarget.Z) + " " +
-                     to_string(leftPupilDiam) + " " + to_string(rightPupilDiam) + " " + to_string(cf) + " " +
-                     to_string(currentAOI);
-        string msgToSend = msg + (selected ? " SELECT" : " LOOKAT");
+        std::string msg = std::to_string(t.ToUnixTimestamp() * 1000 + t.GetMillisecond()) + " " +
+            std::to_string(uv.X) + " " + std::to_string(uv.Y) + " " +
+            std::to_string(gazeOrigin.X) + " " + std::to_string(gazeOrigin.Y) + " " + std::to_string(gazeOrigin.Z) + " " +
+            std::to_string(correctedGazeTarget.X) + " " + std::to_string(correctedGazeTarget.Y) + " " + std::to_string(correctedGazeTarget.Z) + " " +
+            std::to_string(leftPupilDiam) + " " + std::to_string(rightPupilDiam) + " " + std::to_string(cf) + " " +
+            std::to_string(currentAOI);
+        std::string msgToSend = msg + (selected ? " SELECT" : " LOOKAT");
         for (auto &connection : m_server.get_connections())
             connection->send(msgToSend);
         if (m_rReleased)
@@ -629,7 +639,7 @@ void AStimulus::Tick(float DeltaTime)
 
     if (m_needsUpdate)
     {
-        lock_guard<mutex> lock(m_mutex);
+        FScopeLock lock(&m_mutex);
         SetActorScale3D(FVector(m_aspect * 1.218 * m_scaleX, 1.218 * m_scaleY, 1.0));
         m_dynContour = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(GetWorld(), UCanvasRenderTarget2D::StaticClass(), m_dynTexW, m_dynTexH);
         m_dynContour->ClearColor = FLinearColor(0, 0, 0, 0);
@@ -716,7 +726,7 @@ void AStimulus::updateDynTex(const TArray<uint8> &img, EImageFormat fmt, float s
     {
         m_dynTex->SetTextureParameterValue(FName(TEXT("DynTex")), tex);
         {
-            lock_guard<mutex> lock(m_mutex);
+            FScopeLock lock(&m_mutex);
             m_aspect = (float)w / (float)h;
             m_scaleX = sx;
             m_scaleY = sy;
@@ -787,7 +797,7 @@ void AStimulus::drawContour(UCanvas *cvs, int32 w, int32 h)
     strokeCircle(cvs, FVector2D(m_corrTarget.X * m_stimulusW, m_corrTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(0, 1, 0, 1));
     strokeCircle(cvs, FVector2D(m_camTarget.X * m_stimulusW, m_camTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(1, 0, 1, 1));
 #else
-    float th = max(round((float)max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
+    float th = std::max(std::round((float)std::max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
     for (auto aoi : m_selectedAOIs)
         drawContourOfAOI(cvs, FLinearColor(0, 0.2, 0, 1), th, aoi);
     if (m_activeAOI != -1)

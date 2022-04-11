@@ -12,22 +12,13 @@ THIRD_PARTY_INCLUDES_END
 #undef ERROR
 #undef UpdateResource
 
-using namespace std;
-
 using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
 
 #include "SRanipal_Eyes_Enums.h"
-
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ImageUtils.h"
-#include "IImageWrapper.h"
-#include "IImageWrapperModule.h"
-#include "MotionControllerComponent.h"
-#include "Misc/Base64.h"
-#include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/Canvas.h"
-#include "GenericPlatform/GenericPlatformMath.h"
+#include "IImageWrapper.h"
 #include "Stimulus.generated.h"
 
 
@@ -92,18 +83,18 @@ private:
     static const constexpr float EPSILON = 1.0e-5f;
 
     WSServer m_server;
-    thread m_serverThread;
+    std::thread m_serverThread;
 
-    UMaterialInstanceDynamic *m_dynTex;
-    UCanvasRenderTarget2D *m_dynContour;
-    mutex m_mutex;
+    class UMaterialInstanceDynamic *m_dynTex;
+    class UCanvasRenderTarget2D *m_dynContour;
+    FCriticalSection m_mutex;
     float m_aspect;
     float m_scaleX;
     float m_scaleY;
     int m_dynTexW;
     int m_dynTexH;
     TArray<AOI> m_dynAOIs;
-    atomic<bool> m_needsUpdate;
+    FThreadSafeBool m_needsUpdate;
     int m_calibIndex;
 
     bool m_inSelectionMode;
@@ -121,7 +112,7 @@ private:
     FVector2D m_camTarget;
 #endif // EYE_DEBUG
 
-    atomic<bool> m_needsCustomCalib;
+    FThreadSafeBool m_needsCustomCalib;
     CalibPhase m_customCalibPhase;
     TArray<CalibPoint> m_customCalibPoints;
     CalibTarget m_customCalibTarget;
@@ -132,10 +123,10 @@ private:
     FTransform m_staticTransform;
     FVector m_staticExtent;
 
-    UMotionControllerComponent *m_mcRight;
+    class UMotionControllerComponent *m_mcRight;
     FVector2D m_laser;
 
-    APlayerCameraManager *m_camera;
+    class APlayerCameraManager *m_camera;
 
     void initWS();
     void wsRun();
@@ -153,6 +144,8 @@ private:
     void calibrate();
     void customCalibrate();
     void toggleMotionController(bool visible);
+
+    //math functions
     float map(float v, float fromMin, float fromMax, float toMin, float toMax) const
     {
     	return toMin + (v - fromMin) / (fromMax - fromMin) * (toMax - toMin);
@@ -188,11 +181,16 @@ public:
     AStimulus();
     virtual void Tick(float DeltaTime) override;
 
-    UFUNCTION() void drawContour(UCanvas *cvs, int32 w, int32 h);
+    UFUNCTION() 
+    void drawContour(UCanvas *cvs, int32 w, int32 h);
 
-    UFUNCTION(BlueprintCallable) void trigger(bool isPressed);
-    UFUNCTION(BlueprintCallable) void customCalib();
+    UFUNCTION(BlueprintCallable) 
+    void trigger(bool isPressed);
+    UFUNCTION(BlueprintCallable) 
+    void customCalib();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite) UStaticMeshComponent *mesh;
-    UPROPERTY(EditAnywhere) SupportedEyeVersion EyeVersion;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) 
+    class UStaticMeshComponent *mesh;
+    UPROPERTY(EditAnywhere) 
+    SupportedEyeVersion EyeVersion;
 };
