@@ -2,19 +2,6 @@
 
 #pragma once
 
-#define DEPRECATED
-#define UI UI_ST
-THIRD_PARTY_INCLUDES_START
-#define ASIO_STANDALONE 1
-#include "ws/server_ws.hpp"
-THIRD_PARTY_INCLUDES_END
-#undef UI
-#undef ERROR
-#undef UpdateResource
-
-using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
-
-#include "SRanipal_Eyes_Enums.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Canvas.h"
@@ -30,18 +17,51 @@ UCLASS()
 class READINGTRACKER_API AStimulus : public AActor
 {
     GENERATED_BODY()
+public:
+    //----------------- API ---------------------
+    AStimulus();
+    virtual void BeginPlay() override;
+    virtual void Tick(float DeltaTime) override;
+    void updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois);
+    void drawContour(UCanvas* cvs, int32 w, int32 h);
+    void toggleMotionController(bool visible);
 
+    UFUNCTION(BlueprintCallable)
+    void trigger(bool isPressed);
+    UFUNCTION(BlueprintCallable)
+    void customCalib();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    class UStaticMeshComponent* mesh;
 private:
     struct BBox
     {
         FVector2D lt;
         FVector2D rb;
+        inline bool IsPointInside(const FVector2D& pt) const
+        {
+            return pt.X >= lt.X && pt.Y >= lt.Y && pt.X <= rb.X && pt.Y <= rb.Y;
+        }
     };
     struct AOI
     {
         FString name;
         TArray<FVector2D> path;
         BBox bbox;
+        inline bool IsPointInside(const FVector2D& pt) const
+        {
+            //check point in polygon
+            bool IsInPolygon = false;
+            int n = path.Num();
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                if (((path[i].Y > pt.Y) != (path[j].Y > pt.Y)) &&
+                    (pt.X < (path[j].X - path[i].X) * (pt.Y - path[i].Y) /
+                        (path[j].Y - path[i].Y) + path[i].X))
+                    IsInPolygon = !IsInPolygon;
+            }
+            return bbox.IsPointInside(pt) && IsInPolygon;
+        }
     };
     struct CalibPoint
     {
@@ -81,9 +101,6 @@ private:
     static const constexpr float MAX_DISTANCE = 1000.0f;
     static const constexpr float HIT_RADIUS = 1.0f;
     static const constexpr float EPSILON = 1.0e-5f;
-
-    WSServer m_server;
-    std::thread m_serverThread;
 
     class UMaterialInstanceDynamic *m_dynTex;
     class UCanvasRenderTarget2D *m_dynContour;
@@ -128,11 +145,9 @@ private:
 
     class APlayerCameraManager *m_camera;
 
-    void initWS();
-    void wsRun();
     UTexture2D *loadTexture2DFromFile(const FString &fullFilePath);
     UTexture2D *loadTexture2DFromBytes(const TArray<uint8> &bytes, EImageFormat fmt, int &w, int &h);
-    void updateDynTex(const TArray<uint8> &img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>> &aois);
+    
     void strokeCircle(UCanvas *cvs, const FVector2D &pos, float radius, float thickness, const FLinearColor &color) const;
     void fillCircle(UCanvas *cvs, const FVector2D &pos, float radius, const FLinearColor& color) const;
     void drawContourOfAOI(UCanvas *cvs, const FLinearColor &color, float th, int aoi) const;
@@ -141,9 +156,7 @@ private:
     bool hitTest(const FVector2D &pt, const AOI &aoi) const;
     int findActiveAOI(const FVector2D &pt) const;
     void toggleSelectedAOI(int aoi);
-    void calibrate();
     void customCalibrate();
-    void toggleMotionController(bool visible);
 
     //math functions
     float map(float v, float fromMin, float fromMax, float toMin, float toMax) const
@@ -173,24 +186,5 @@ private:
     bool focus(FVector &gazeOrigin, FVector &rawGazeTarget, FVector &correctedGazeTarget,
                float &leftPupilDiam, float &rightPupilDiam, bool &needsUpdateDynContour, float &cf);
 
-protected:
-    virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-public:
-    AStimulus();
-    virtual void Tick(float DeltaTime) override;
-
-    UFUNCTION() 
-    void drawContour(UCanvas *cvs, int32 w, int32 h);
-
-    UFUNCTION(BlueprintCallable) 
-    void trigger(bool isPressed);
-    UFUNCTION(BlueprintCallable) 
-    void customCalib();
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite) 
-    class UStaticMeshComponent *mesh;
-    UPROPERTY(EditAnywhere) 
-    SupportedEyeVersion EyeVersion;
 };
