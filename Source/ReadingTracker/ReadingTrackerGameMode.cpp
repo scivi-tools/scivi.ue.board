@@ -8,6 +8,7 @@
 #include "Misc/Base64.h"
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
+#include "BaseInformant.h"
 
 void AReadingTrackerGameMode::BeginPlay()
 {
@@ -26,7 +27,18 @@ void AReadingTrackerGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AReadingTrackerGameMode::NotifyStimulusSpawned(AStimulus* _stimulus)
 {
     stimulus = _stimulus;
-    initWS();
+    if (stimulus && informant && !server_started) 
+    {
+        initWS();
+    }
+}
+
+void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
+{
+    informant = _informant;
+    if (stimulus && informant && !server_started) {
+        initWS();
+    }
 }
 
 void AReadingTrackerGameMode::initWS()
@@ -45,12 +57,12 @@ void AReadingTrackerGameMode::initWS()
             if (jsonParsed->TryGetField("calibrate"))
                 CalibrateVR();
             else if (jsonParsed->TryGetField("customCalibrate"))
-                stimulus->customCalib();
+                stimulus->customCalibrate();
             else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
             {
                 auto PC = GetWorld()->GetFirstPlayerController();
                 bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
-                stimulus->toggleMotionController(visibility);
+                informant->ToggleMotionController(visibility);
             }
             else
             {
@@ -98,6 +110,7 @@ void AReadingTrackerGameMode::initWS()
     };
 
     m_serverThread = std::thread(&AReadingTrackerGameMode::wsRun, this);
+    server_started = true;
 }
 
 void AReadingTrackerGameMode::CalibrateVR()
@@ -110,3 +123,33 @@ void AReadingTrackerGameMode::Broadcast(FString& message)
     for (auto& connection : m_server.get_connections())//broadcast to everyone
         connection->send(TCHAR_TO_ANSI(*message));
 }
+
+AActor* AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint)
+{
+    const float ray_thickness = 1.0f;
+    FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, ignoreActor);
+    traceParam.bTraceComplex = true;
+    traceParam.bReturnPhysicalMaterial = false;
+    FHitResult hitResult(ForceInit);
+    bool is_collided;
+
+    if (ray_thickness <= 0.0f)
+    {
+        is_collided = GetWorld()->LineTraceSingleByChannel(hitResult, origin, end,
+            ECollisionChannel::ECC_WorldStatic, traceParam);
+    }
+    else
+    {
+        FCollisionShape sph = FCollisionShape();
+        sph.SetSphere(ray_thickness);
+        is_collided = GetWorld()->SweepSingleByChannel(hitResult, origin, end, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
+            ECollisionChannel::ECC_WorldStatic, sph, traceParam);
+    }
+
+    if (is_collided) {
+        hitPoint = hitResult.Location;
+        return hitResult.Actor.Get();
+    }
+    return nullptr;
+}
+

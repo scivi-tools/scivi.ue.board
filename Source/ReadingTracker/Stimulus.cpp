@@ -2,20 +2,63 @@
 
 #include "Stimulus.h"
 #include "ReadingTrackerGameMode.h"
-#include "GameFramework/Character.h"
+#include "BaseInformant.h"
+
 #include "SRanipalEye_FunctionLibrary.h"
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
 #include "SRanipalEye_Core.h"
-#include "Json.h"
 #include "IXRTrackingSystem.h"
 #include "Engine/CanvasRenderTarget2D.h"
-#include "MotionControllerComponent.h"
 #include "ImageUtils.h"
-
 #include "IImageWrapperModule.h"
 #include "Misc/Base64.h"
 #include "GenericPlatform/GenericPlatformMath.h"
+
+//custom calibration
+static const constexpr int TARGET_MAX_RADIUS = 15;
+static const constexpr int TARGET_MIN_RADIUS = 7;
+static const constexpr int POINTS_PER_ROW = 3;
+static const constexpr int ROWS_IN_PATTERN = 3;
+static const constexpr int SAMPLES_TO_START = 180;     // 2s
+static const constexpr int SAMPLES_TO_START_MOVE = 22; // 0.25s
+static const constexpr int SAMPLES_TO_DECREASE = 90;   // 1s
+static const constexpr int SAMPLES_TO_MOVE = 10;       // 110ms
+static const constexpr int SAMPLES_TO_REJECT = 45;
+static const constexpr float START_POSITION = 0.05f;
+static const constexpr float END_POSITION = 0.95f;
+static const constexpr float CENTER_POSTION = 0.5f;
+static const constexpr float OUTLIER_THRESHOLD = 3.0f;
+static const constexpr float MAX_DISTANCE = 1000.0f;
+static const constexpr float HIT_RADIUS = 1.0f;
+static const constexpr float EPSILON = 1.0e-5f;
+
+//math functions
+//lerp - use FMath::Lerp
+float map(float v, float fromMin, float fromMax, float toMin, float toMax)
+{
+    return toMin + (v - fromMin) / (fromMax - fromMin) * (toMax - toMin);
+};
+float theta(const FVector& gaze)
+{
+    return fabs(gaze.Y) < EPSILON && fabs(gaze.Z) < EPSILON ? NAN : atan2(gaze.Y, gaze.Z) + PI;
+};
+float radius2(const FVector& gaze)
+{
+    return gaze.Y * gaze.Y + gaze.Z * gaze.Z;
+};
+int signum(float a, float b)
+{
+    return FGenericPlatformMath::IsNaN(a) || FGenericPlatformMath::IsNaN(b) || fabs(a - b) < EPSILON ? 0 : a - b > 0.0f ? 1 : -1;
+};
+//калибровка
+FVector2D posForIdx(int idx)
+{
+    /*if ((idx / POINTS_PER_ROW) % 2)
+        idx = (idx / POINTS_PER_ROW) * POINTS_PER_ROW + POINTS_PER_ROW - (idx % POINTS_PER_ROW) - 1;*/
+    return FVector2D((float)(idx % POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(POINTS_PER_ROW - 1) + START_POSITION,
+        (float)(idx / POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(ROWS_IN_PATTERN - 1) + START_POSITION);
+}
 
 //---------------------- API --------------------------
 
@@ -36,187 +79,25 @@ AStimulus::AStimulus()
     
     m_stimulusW = 0;
     m_stimulusH = 0;
-    m_activeAOI = -1;
-    m_inSelectionMode = false;
-    m_rReleased = false;
-    m_imgUpdated = false;
-
-    m_camera = nullptr;
+    m_activeAOI = nullptr;
 
     m_needsCustomCalib = false;
     m_customCalibSamples = 0;
-
-    m_mcRight = nullptr;
 }
 
 void AStimulus::BeginPlay()
 {
     Super::BeginPlay();
-    auto PC = GetWorld()->GetFirstPlayerController();
-    m_camera = PC->PlayerCameraManager;
-
-    TArray<UMotionControllerComponent *> comps;
-    auto character = PC->GetCharacter();
-    character->GetComponents(comps);
-    if (comps.Num() > 0)
-        for (UMotionControllerComponent *motionController : comps)
-        {
-            if (motionController->MotionSource == "Right")
-            {
-                m_mcRight = motionController;
-                break;
-            }
-        }
-    if (m_mcRight)
-        m_mcRight->SetHiddenInGame(true, true);
-
     auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    GM->NotifyStimulusSpawned(this);
-
+    if (GM)
+        GM->NotifyStimulusSpawned(this);
     m_dynTex = mesh->CreateAndSetMaterialInstanceDynamic(0);
-    m_dynContour = nullptr;
-
-    /*for (TActorIterator<AStaticMeshActor> Itr(GetWorld()); Itr; ++Itr)
-    {
-        if (Itr->GetName() == "Sphere_2")
-        {
-            m_pointer = *Itr;
-            break;
-        }
-    }*/
 }
 
 void AStimulus::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    FVector gazeOrigin, rawGazeTarget, correctedGazeTarget;
-    float leftPupilDiam, rightPupilDiam;
-    float cf;
-    bool needsUpdateDynContour;
-    bool hit = focus(gazeOrigin, rawGazeTarget, correctedGazeTarget, leftPupilDiam, rightPupilDiam, needsUpdateDynContour, cf);
-    if (hit)
-    {
-        FVector2D uv = sceneToBillboard(correctedGazeTarget);
-
-        bool selected = false;
-
-#ifdef EYE_DEBUG
-        m_corrTarget = uv;
-        m_rawTarget = sceneToBillboard(rawGazeTarget);
-        FVector camHitPoint;
-        FVector camLocation = m_camera->GetCameraLocation();
-        FRotator camRotation = m_camera->GetCameraRotation();
-        FVector gazeRay = camRotation.RotateVector(FVector::ForwardVector) * MAX_DISTANCE + camLocation;
-        castRay(camLocation, gazeRay, camHitPoint);
-        m_camTarget = sceneToBillboard(camHitPoint);
-
-        int currentAOI = -1;
-        needsUpdateDynContour = true;
-#else
-        int currentAOI = findActiveAOI(FVector2D(uv.X * m_stimulusW, uv.Y * m_stimulusH));
-        if (!m_mcRight->bHiddenInGame)
-        {
-            FVector p;
-            bool hr = castRay(m_mcRight->GetComponentLocation(), m_mcRight->GetComponentLocation() + m_mcRight->GetForwardVector() * 1000.0f, p);
-            if (hr)
-            {
-                m_laser = sceneToBillboard(p);
-                needsUpdateDynContour = true;
-                if (m_rReleased)
-                {
-                    int selAOI = findActiveAOI(FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH));
-                    if (selAOI != -1)
-                    {
-                        toggleSelectedAOI(selAOI);
-                        currentAOI = selAOI;
-                        selected = true;
-                    }
-                }
-            }
-        }
-        /*int newAOI = m_inSelectionMode ? currentAOI : -1;
-        if (m_activeAOI != newAOI && m_dynContour)
-        {
-            if (newAOI == -1 && !m_inSelectionMode)
-            {
-                selected = true;
-                toggleSelectedAOI(m_activeAOI);
-            }
-            m_activeAOI = newAOI;
-            needsUpdateDynContour = true;
-        }*/
-#endif // EYE_DEBUG
-
-        if (m_dynContour && needsUpdateDynContour)
-            m_dynContour->UpdateResource();
-
-#ifdef COLLECCT_ANGULAR_ERROR
-        if (m_rReleased)
-        {
-#ifdef MEASURE_ANGULAR_SIZES
-            static FQuat prevQ;
-            static bool measure = false;
-            FQuat q = m_camera->GetCameraRotation().Quaternion();
-            if (measure)
-            {
-                FString s = FString::Printf(TEXT(">>>>>>> %f"), prevQ.AngularDistance(q));
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *s);
-                GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, s);
-            }
-            else
-            {
-                prevQ = q;
-            }
-            measure = !measure;
-#endif // MEASURE_ANGULAR_SIZES
-            static int kk = 0;
-            const int kn = 5;
-            FVector rgt = billboardToScene(FVector2D((kk % kn) * 0.9f / (kn - 1) + 0.05f, (kk / kn) * 0.9f / (kn - 1) + 0.05f));
-            FVector rg = rgt - gazeOrigin;
-            rg.Normalize();
-            FVector g = correctedGazeTarget - gazeOrigin;
-            g.Normalize();
-            leftPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
-            g = rawGazeTarget - gazeOrigin;
-            g.Normalize();
-            rightPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
-            gazeOrigin.X = m_rawTarget.X;
-            gazeOrigin.Y = m_rawTarget.Y;
-            ++kk;
-            if (kk == kn * kn)
-                kk = 0;
-        }
-#endif // COLLECCT_ANGULAR_ERROR
-
-        FDateTime t = FDateTime::Now();
-        float time = t.ToUnixTimestamp() * 1000.0f + t.GetMillisecond();
-        auto msg = FString::Printf(TEXT("%f %f %f %f %f %F %F %F %F %F %F %F %F"),
-            time, uv.X, uv.Y,
-            gazeOrigin.X, gazeOrigin.Y, gazeOrigin.Z,
-            correctedGazeTarget.X, correctedGazeTarget.Y, correctedGazeTarget.Z,
-            leftPupilDiam, rightPupilDiam, cf, currentAOI);
-        FString msgToSend = msg;
-        if (selected)
-            msgToSend.Append(TEXT(" SELECT"));
-        else msgToSend.Append(TEXT(" LOOKAT"));
-
-        GM->Broadcast(msgToSend);
-        msgToSend = msg;
-        if (m_rReleased)
-        {
-            msgToSend.Append(TEXT(" R_RELD"));
-            m_rReleased = false;
-            GM->Broadcast(msgToSend);
-        }
-        if (m_imgUpdated)
-        {
-            msgToSend.Append(TEXT(" IMG_UP"));
-            m_imgUpdated = false;
-            GM->Broadcast(msgToSend);
-        }
-    }
-
+    //update texture, thouth it can be in UpdateDynTex
     if (m_needsUpdate)
     {
         FScopeLock lock(&m_mutex);
@@ -228,17 +109,16 @@ void AStimulus::Tick(float DeltaTime)
         m_stimulusW = m_dynTexW;
         m_stimulusH = m_dynTexH;
         m_aois = m_dynAOIs;
-        m_activeAOI = -1;
+        m_activeAOI = nullptr;
         m_selectedAOIs.Empty();
         m_dynContour->UpdateResource();
         m_staticTransform = GetTransform();
         m_staticExtent = mesh->CalcLocalBounds().BoxExtent;
         m_needsUpdate = false;
-        m_imgUpdated = true;
+        OnImageUpdated();
     }
 }
 
-//обновить текстуру на табле - часть API
 void AStimulus::updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois)
 {
     int w, h;
@@ -247,7 +127,7 @@ void AStimulus::updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float s
     {
         m_dynTex->SetTextureParameterValue(FName(TEXT("DynTex")), tex);
         {
-            FScopeLock lock(&m_mutex);
+            FScopeLock lock(&m_mutex);//чтобы пока обновляем текстуру не вызвался в тике Update
             m_aspect = (float)w / (float)h;
             m_scaleX = sx;
             m_scaleY = sy;
@@ -281,34 +161,112 @@ void AStimulus::updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float s
     }
 }
 
-void AStimulus::toggleMotionController(bool visible)
+void AStimulus::BindInformant(ABaseInformant* _informant)
 {
-    m_mcRight->SetHiddenInGame(!visible, true);
+    informant = _informant;
 }
 
-//кастомная калибровка
+void AStimulus::OnInFocus(const FGaze& gaze, const FVector& FocusPoint)
+{
+    FVector2D uv = sceneToBillboard(FocusPoint);
+    int currentAOIIndex = -1;
+    if (!informant->m_mcRight->bHiddenInGame)
+        AOI* lookedAOI = findActiveAOI(FVector2D(uv.X * m_stimulusW, uv.Y * m_stimulusH), currentAOIIndex);
+    SendDataToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
+}
+
+void AStimulus::OnTriggerPressed(const FGaze& gaze, const FVector& FocusPoint)
+{
+    if (!informant->m_mcRight->bHiddenInGame) 
+    {
+        m_laser = sceneToBillboard(FocusPoint);
+        if (m_dynContour)
+            m_dynContour->UpdateResource();
+    }
+}
+
+void AStimulus::OnTriggerReleased(const FGaze& gaze, const FVector& FocusPoint)
+{
+#ifdef COLLECCT_ANGULAR_ERROR
+#ifdef MEASURE_ANGULAR_SIZES
+       static FQuat prevQ;
+        static bool measure = false;
+        FQuat q = informant->CameraComponent->GetComponentRotation().Quaternion();
+        if (measure)
+        {
+            FString s = FString::Printf(TEXT(">>>>>>> %f"), prevQ.AngularDistance(q));
+            UE_LOG(LogTemp, Warning, TEXT("%s"), *s);
+            GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, s);
+        }
+        else
+        {
+            prevQ = q;
+        }
+        measure = !measure;
+#endif // MEASURE_ANGULAR_SIZES
+        static int kk = 0;
+        const int kn = 5;
+        FVector rgt = billboardToScene(FVector2D((kk % kn) * 0.9f / (kn - 1) + 0.05f, (kk / kn) * 0.9f / (kn - 1) + 0.05f));
+        FVector rg = rgt - gazeOrigin;
+        rg.Normalize();
+        FVector g = correctedGazeTarget - gazeOrigin;
+        g.Normalize();
+        leftPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
+        g = rawGazeTarget - gazeOrigin;
+        g.Normalize();
+        rightPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
+        gazeOrigin.X = m_rawTarget.X;
+        gazeOrigin.Y = m_rawTarget.Y;
+        ++kk;
+        if (kk == kn * kn)
+            kk = 0;
+#endif // COLLECCT_ANGULAR_ERROR
+
+    m_laser = sceneToBillboard(FocusPoint);
+    if (m_dynContour)
+        m_dynContour->UpdateResource();
+    int currentAOIIndex = -1;
+    if (!informant->m_mcRight->bHiddenInGame) 
+    {
+        AOI* selectedAOI = findActiveAOI(FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH), currentAOIIndex);
+        if (selectedAOI)
+        {
+            toggleSelectedAOI(selectedAOI);
+            SendDataToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
+        }
+    }
+    SendDataToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
+}
+
+void AStimulus::OnImageUpdated()
+{
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    FGaze gaze;
+    FVector hitPoint;
+    informant->GetGaze(gaze);
+    const float ray_radius = 1.0f;
+    const float ray_length = 1000.0f;
+    AStimulus* focusedStimulus = Cast<AStimulus>(GM->RayTrace(informant, gaze.origin,
+        gaze.origin + gaze.direction * ray_length, hitPoint));
+    if (focusedStimulus && focusedStimulus == this)
+    {
+        FVector2D uv = sceneToBillboard(hitPoint);
+        int currentAOIIndex = -1;
+        if (informant->m_mcRight->bHiddenInGame)
+            AOI* lookedAOI = findActiveAOI(FVector2D(uv.X * m_stimulusW, uv.Y * m_stimulusH), currentAOIIndex);
+        SendDataToSciVi(gaze, uv, currentAOIIndex, TEXT("IMG_UP"));
+    }
+}
+
 void AStimulus::customCalibrate()
 {
     m_needsCustomCalib = true;
 }
 
-void AStimulus::customCalib()
-{
-    customCalibrate();
-}
-
-//OnTriggerPressed - должно быть у актора
-void AStimulus::trigger(bool isPressed)
-{
-    m_inSelectionMode = isPressed;
-    if (!isPressed)
-        m_rReleased = true;
-}
-
 //----------------------- Draw functions --------------------
 
 //выделить AOI = по сути часть API
-void AStimulus::toggleSelectedAOI(int aoi)
+void AStimulus::toggleSelectedAOI(AOI* aoi)
 {
     if (m_selectedAOIs.Contains(aoi))
         m_selectedAOIs.Remove(aoi);
@@ -337,22 +295,22 @@ void AStimulus::fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, con
 }
 
 //нарисовать квардарт на табле - часть API - private API
-void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, int aoi) const
+void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, AOI* aoi) const
 {
-    FVector2D pt = m_aois[aoi].path[0];
-    for (int i = 1, n = m_aois[aoi].path.Num(); i < n; ++i)
+    FVector2D pt = aoi->path[0];
+    for (int i = 1, n = aoi->path.Num(); i < n; ++i)
     {
-        cvs->K2_DrawLine(pt, m_aois[aoi].path[i], th, color);
-        pt = m_aois[aoi].path[i];
+        cvs->K2_DrawLine(pt, aoi->path[i], th, color);
+        pt = aoi->path[i];
     }
-    cvs->K2_DrawLine(pt, m_aois[aoi].path[0], th, color);
+    cvs->K2_DrawLine(pt, aoi->path[0], th, color);
 }
 
 //нарисовать квардарт на табле - часть API - private API
 void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
 {
 #ifdef EYE_DEBUG
-    float th = max(round((float)max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
+    float th = FMath::Max(round((float)FMath::Max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
     strokeCircle(cvs, FVector2D(m_rawTarget.X * m_stimulusW, m_rawTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(1, 0, 0, 1));
     strokeCircle(cvs, FVector2D(m_corrTarget.X * m_stimulusW, m_corrTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(0, 1, 0, 1));
     strokeCircle(cvs, FVector2D(m_camTarget.X * m_stimulusW, m_camTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(1, 0, 1, 1));
@@ -360,11 +318,11 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
     float th = FMath::Max(FMath::RoundToFloat((float)FMath::Max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
     for (auto aoi : m_selectedAOIs)
         drawContourOfAOI(cvs, FLinearColor(0, 0.2, 0, 1), th, aoi);
-    if (m_activeAOI != -1)
+    if (m_activeAOI)
         drawContourOfAOI(cvs, FLinearColor(1, 0, 0, 1), th, m_activeAOI);
 #endif // EYE_DEBUG
 
-    if (!m_mcRight->bHiddenInGame)
+    if (!informant->m_mcRight->bHiddenInGame)
         fillCircle(cvs, FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH), 10, FLinearColor(1, 0, 0, 1));
 
     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
@@ -435,6 +393,20 @@ UTexture2D* AStimulus::loadTexture2DFromBytes(const TArray<uint8>& bytes, EImage
     return loadedT2D;
 }
 
+void AStimulus::SendDataToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, FString Id)
+{
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    //Send message to scivi
+    FDateTime t = FDateTime::Now();
+    float time = t.ToUnixTimestamp() * 1000.0f + t.GetMillisecond();
+    auto msg = FString::Printf(TEXT("%f %f %f %f %f %F %F %F %F %F %F %F %I %s"),
+        time, uv.X, uv.Y,
+        gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
+        gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
+        gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, *Id);
+    GM->Broadcast(msg);
+}
+
 //используется только в калибровке
 FVector AStimulus::billboardToScene(const FVector2D& pos) const
 {
@@ -450,68 +422,16 @@ FVector2D AStimulus::sceneToBillboard(const FVector& pos) const
 }
 
 //------------------------ Collision detection -----------------------
-//много где
-bool AStimulus::castRay(const FVector& origin, const FVector& ray, FVector& hitPoint) const
+AStimulus::AOI* AStimulus::findActiveAOI(const FVector2D& pt, int& out_index) const
 {
-    FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, m_camera);
-    traceParam.bTraceComplex = true;
-    traceParam.bReturnPhysicalMaterial = false;
-    FHitResult hitResult(ForceInit);
-    bool result;
-
-    if (HIT_RADIUS == 0.0f)
-    {
-        result = m_camera->GetWorld()->LineTraceSingleByChannel(hitResult, origin, ray,
-            ECollisionChannel::ECC_WorldStatic, traceParam);
-    }
-    else
-    {
-        FCollisionShape sph = FCollisionShape();
-        sph.SetSphere(HIT_RADIUS);
-        result = m_camera->GetWorld()->SweepSingleByChannel(hitResult, origin, ray, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
-            ECollisionChannel::ECC_WorldStatic, sph, traceParam);
-    }
-
-    if (result)
-        hitPoint = hitResult.Location;
-
-    return result;
-}
-
-//проверить коллизию с объектом - private API
-bool AStimulus::focus(FVector& gazeOrigin, FVector& rawGazeTarget, FVector& correctedGazeTarget,
-    float& leftPupilDiam, float& rightPupilDiam, bool& needsUpdateDynContour, float& cf)
-{
-    FFocusInfo focusInfo;
-    FVector gazeTarget;
-    bool hit = USRanipalEye_FunctionLibrary::Focus(GazeIndex::COMBINE, 1000.0f, 1.0f, m_camera, ECollisionChannel::ECC_WorldStatic, focusInfo, gazeOrigin, gazeTarget);
-    if (hit && focusInfo.actor == this)
-    {
-        ViveSR::anipal::Eye::VerboseData vd;
-        SRanipalEye_Core::Instance()->GetVerboseData(vd);
-
-        rawGazeTarget = focusInfo.point;
-        leftPupilDiam = vd.left.pupil_diameter_mm;
-        rightPupilDiam = vd.right.pupil_diameter_mm;
-
-        FVector gaze = (vd.right.gaze_direction_normalized + vd.left.gaze_direction_normalized) / 2.0f; // Needs conversion to UE coordinates: X,Y,Z -> Z,-X,Y
-        gaze.Normalize();
-        applyCustomCalib(gazeOrigin, rawGazeTarget, FVector(gaze.Z, gaze.X * -1.0f, gaze.Y), correctedGazeTarget, needsUpdateDynContour, cf);
-
-        return true;
-    }
-    return false;
-}
-
-//поиск AOI куд попали
-int AStimulus::findActiveAOI(const FVector2D& pt) const
-{
-    for (int i = 0, n = m_aois.Num(); i < n; ++i)
-    {
+    out_index = -1;
+    for(int i = 0; i < m_aois.Num(); ++i)
         if (m_aois[i].IsPointInside(pt))
-            return i;
-    }
-    return -1;
+        {
+            out_index = i;
+            return (AOI*)(m_aois.GetData() + i);
+        }
+    return nullptr;
 }
 
 //------------------------ Custom Calibration ------------------------
@@ -612,15 +532,6 @@ bool AStimulus::findBasis(const FVector &gaze, CalibPoint &cp1, CalibPoint &cp2,
     return true;
 }
 
-//калибровка
-FVector2D AStimulus::posForIdx(int idx) const
-{
-    /*if ((idx / POINTS_PER_ROW) % 2)
-        idx = (idx / POINTS_PER_ROW) * POINTS_PER_ROW + POINTS_PER_ROW - (idx % POINTS_PER_ROW) - 1;*/
-    return FVector2D((float)(idx % POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(POINTS_PER_ROW - 1) + START_POSITION,
-        (float)(idx / POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(ROWS_IN_PATTERN - 1) + START_POSITION);
-}
-
 //применить калибровку
 void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeTarget, const FVector& gaze,
     FVector& correctedGazeTarget, bool& needsUpdateDynContour, float& cf)
@@ -636,10 +547,12 @@ void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeT
     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
     {
         const float CALIB_DISTANCE = 450.0f;
-        FVector camLocation = m_camera->GetCameraLocation();
-        FRotator camRotation = m_camera->GetCameraRotation();
+        FVector camLocation = informant->CameraComponent->GetComponentLocation();
+        FRotator camRotation = informant->CameraComponent->GetComponentRotation();
         SetActorLocation(camRotation.RotateVector(FVector::ForwardVector) * CALIB_DISTANCE + camLocation);
-        SetActorRotation(camRotation.Quaternion() * FQuat(FVector(0.0f, 0.0f, -1.0f), PI / 2.0f) * m_staticTransform.GetRotation());
+        SetActorRotation(camRotation.Quaternion() * 
+                        FQuat(FVector(0.0f, 0.0f, -1.0f), PI / 2.0f) * 
+                        GetTransform().GetRotation());
     }
 
     cf = -1.0f;
@@ -766,6 +679,7 @@ void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeT
 
     case CalibPhase::Done:
     {
+        auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
         CalibPoint cp1, cp2, cp3;
         float w1, w2, w3;
         if (findBasis(gaze, cp1, cp2, cp3, w1, w2, w3))
@@ -776,10 +690,10 @@ void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeT
             FVector reportedGazeOrigin, reportedGazeDirection;
             if (USRanipalEye_FunctionLibrary::GetGazeRay(GazeIndex::COMBINE, reportedGazeOrigin, reportedGazeDirection))
             {
-                FVector camLocation = m_camera->GetCameraLocation();
-                FRotator camRotation = m_camera->GetCameraRotation();
+                FVector camLocation = informant->CameraComponent->GetComponentLocation();
+                FRotator camRotation = informant->CameraComponent->GetComponentRotation();
                 FVector gazeRay = (corr.RotateVector(camRotation.RotateVector(reportedGazeDirection)) * MAX_DISTANCE) + camLocation;
-                if (!castRay(camLocation, gazeRay, correctedGazeTarget))
+                if (!GM->RayTrace(informant, camLocation, gazeRay, correctedGazeTarget))
                     correctedGazeTarget = gazeTarget;
             }
             else

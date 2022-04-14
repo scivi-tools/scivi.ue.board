@@ -28,7 +28,10 @@ public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	void NotifyStimulusSpawned(class AStimulus* _stimulus);
+	void NotifyInformantSpawned(class ABaseInformant* _informant);
 	void Broadcast(FString& message);
+
+	AActor* RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint);
 
 	void CalibrateVR();
 	UPROPERTY(EditAnywhere)
@@ -40,5 +43,7 @@ protected:
 	void wsRun() { m_server.start(); }
 	WSServer m_server;
 	std::thread m_serverThread;
+	bool server_started = false;
 	class AStimulus* stimulus;
+	class ABaseInformant* informant;
 };
