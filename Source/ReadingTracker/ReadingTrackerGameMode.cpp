@@ -9,6 +9,7 @@
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
 #include "BaseInformant.h"
+#include "WordListWall.h"
 
 void AReadingTrackerGameMode::BeginPlay()
 {
@@ -20,23 +21,29 @@ void AReadingTrackerGameMode::BeginPlay()
 void AReadingTrackerGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     m_server.stop();
-    m_serverThread.join();
+    m_serverThread->join();
+    m_serverThread.Reset();
     SRanipalEye_Framework::Instance()->StopFramework();
 }
 
 void AReadingTrackerGameMode::NotifyStimulusSpawned(AStimulus* _stimulus)
 {
+    FScopeLock lock(&server_launching_mutex);
     stimulus = _stimulus;
-    if (stimulus && informant && !server_started) 
+    if (stimulus && informant && !server_started)
     {
+        stimulus->BindInformant(informant);
         initWS();
     }
 }
 
 void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
 {
+    FScopeLock lock(&server_launching_mutex);
     informant = _informant;
-    if (stimulus && informant && !server_started) {
+    if (stimulus && informant && !server_started) 
+    {
+        stimulus->BindInformant(informant);
         initWS();
     }
 }
@@ -109,7 +116,7 @@ void AReadingTrackerGameMode::initWS()
         UE_LOG(LogTemp, Warning, TEXT("WebSocket: Error"));
     };
 
-    m_serverThread = std::thread(&AReadingTrackerGameMode::wsRun, this);
+    m_serverThread.Reset(new std::thread(&AReadingTrackerGameMode::wsRun, this));
     server_started = true;
 }
 
@@ -151,5 +158,9 @@ AActor* AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVect
         return hitResult.Actor.Get();
     }
     return nullptr;
+}
+
+void AReadingTrackerGameMode::CreateListOfWords()
+{
 }
 

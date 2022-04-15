@@ -45,6 +45,18 @@ public:
 	UCameraComponent* CameraComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	UMotionControllerComponent* m_mcRight;
+	UMotionControllerComponent* MC_Left = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	UStaticMeshComponent* MC_Left_Mesh = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	class UWidgetInteractionComponent* MC_Left_Lazer = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	UMotionControllerComponent* MC_Right = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	UStaticMeshComponent* MC_Right_Mesh = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	class UWidgetInteractionComponent* MC_Right_Lazer = nullptr;
+
 	
 };

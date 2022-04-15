@@ -9,6 +9,17 @@
 			"sources": [
 				{
 					"mode": "trigger",
+					"path": "/user/hand/left/input/trigger",
+					"inputs":
+					{
+						"click":
+						{
+							"output": "/actions/main/in/RTrigger"
+						}
+					}
+				},
+				{
+					"mode": "trigger",
 					"path": "/user/hand/right/input/trigger",
 					"inputs":
 					{
@@ -67,5 +78,5 @@
 			]
 		}
 	},
-	"description": "ReadingTracker-15973114"
+	"description": "ReadingTracker-17735300"
 }

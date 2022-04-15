@@ -21,8 +21,10 @@ public:
     //----------------- API ---------------------
     AStimulus();
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type reason) override;
     virtual void Tick(float DeltaTime) override;
     void updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois);
+    UFUNCTION()
     void drawContour(UCanvas* cvs, int32 w, int32 h);
     void BindInformant(class ABaseInformant* _informant);
     void OnInFocus(const struct FGaze& gaze, const FVector& FocusPoint);
@@ -40,7 +42,7 @@ public:
 
     //----------------- Private API -----------------
 protected:
-    void SendDataToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, FString Id);
+    void SendDataToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
 
     FVector billboardToScene(const FVector2D& pos) const;
     FVector2D sceneToBillboard(const FVector& pos) const;

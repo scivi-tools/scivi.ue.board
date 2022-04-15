@@ -27,23 +27,35 @@ class READINGTRACKER_API AReadingTrackerGameMode : public AGameModeBase
 public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	//----------------- Scene ----------------------
+public:
 	void NotifyStimulusSpawned(class AStimulus* _stimulus);
 	void NotifyInformantSpawned(class ABaseInformant* _informant);
-	void Broadcast(FString& message);
-
 	AActor* RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint);
+	UFUNCTION(BlueprintCallable)
+	void CreateListOfWords();
+protected:
+	class AStimulus* stimulus;
+	class ABaseInformant* informant;
+	TArray<class WordListWall*> walls;
 
+	//------------------- VR ----------------------
+public:
 	void CalibrateVR();
 	UPROPERTY(EditAnywhere)
 	SupportedEyeVersion EyeVersion;
 
+//----------------------- SciVi networking --------------
+public:
+	void Broadcast(FString& message);
 protected:
 	using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
 	void initWS();
 	void wsRun() { m_server.start(); }
 	WSServer m_server;
-	std::thread m_serverThread;
+	TUniquePtr<std::thread> m_serverThread;//you can't use std::thread in UE4, because ue4 can't destroy it then gave is exiting
+	FCriticalSection server_launching_mutex;
 	bool server_started = false;
-	class AStimulus* stimulus;
-	class ABaseInformant* informant;
+	
 };

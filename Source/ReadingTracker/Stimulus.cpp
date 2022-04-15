@@ -51,7 +51,7 @@ int signum(float a, float b)
 {
     return FGenericPlatformMath::IsNaN(a) || FGenericPlatformMath::IsNaN(b) || fabs(a - b) < EPSILON ? 0 : a - b > 0.0f ? 1 : -1;
 };
-//калибровка
+
 FVector2D posForIdx(int idx)
 {
     /*if ((idx / POINTS_PER_ROW) % 2)
@@ -92,6 +92,12 @@ void AStimulus::BeginPlay()
     if (GM)
         GM->NotifyStimulusSpawned(this);
     m_dynTex = mesh->CreateAndSetMaterialInstanceDynamic(0);
+}
+
+void AStimulus::EndPlay(const EEndPlayReason::Type reason)
+{
+    if (m_dynContour)
+        m_dynContour->OnCanvasRenderTargetUpdate.Clear();
 }
 
 void AStimulus::Tick(float DeltaTime)
@@ -170,14 +176,14 @@ void AStimulus::OnInFocus(const FGaze& gaze, const FVector& FocusPoint)
 {
     FVector2D uv = sceneToBillboard(FocusPoint);
     int currentAOIIndex = -1;
-    if (!informant->m_mcRight->bHiddenInGame)
+    if (!informant->MC_Right->bHiddenInGame)
         AOI* lookedAOI = findActiveAOI(FVector2D(uv.X * m_stimulusW, uv.Y * m_stimulusH), currentAOIIndex);
     SendDataToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
 }
 
 void AStimulus::OnTriggerPressed(const FGaze& gaze, const FVector& FocusPoint)
 {
-    if (!informant->m_mcRight->bHiddenInGame) 
+    if (!informant->MC_Right->bHiddenInGame)
     {
         m_laser = sceneToBillboard(FocusPoint);
         if (m_dynContour)
@@ -223,10 +229,8 @@ void AStimulus::OnTriggerReleased(const FGaze& gaze, const FVector& FocusPoint)
 #endif // COLLECCT_ANGULAR_ERROR
 
     m_laser = sceneToBillboard(FocusPoint);
-    if (m_dynContour)
-        m_dynContour->UpdateResource();
     int currentAOIIndex = -1;
-    if (!informant->m_mcRight->bHiddenInGame) 
+    if (!informant->MC_Right->bHiddenInGame)
     {
         AOI* selectedAOI = findActiveAOI(FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH), currentAOIIndex);
         if (selectedAOI)
@@ -235,6 +239,8 @@ void AStimulus::OnTriggerReleased(const FGaze& gaze, const FVector& FocusPoint)
             SendDataToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
         }
     }
+    if (m_dynContour)
+        m_dynContour->UpdateResource();
     SendDataToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
 }
 
@@ -252,7 +258,7 @@ void AStimulus::OnImageUpdated()
     {
         FVector2D uv = sceneToBillboard(hitPoint);
         int currentAOIIndex = -1;
-        if (informant->m_mcRight->bHiddenInGame)
+        if (informant->MC_Right->bHiddenInGame)
             AOI* lookedAOI = findActiveAOI(FVector2D(uv.X * m_stimulusW, uv.Y * m_stimulusH), currentAOIIndex);
         SendDataToSciVi(gaze, uv, currentAOIIndex, TEXT("IMG_UP"));
     }
@@ -265,7 +271,6 @@ void AStimulus::customCalibrate()
 
 //----------------------- Draw functions --------------------
 
-//выделить AOI = по сути часть API
 void AStimulus::toggleSelectedAOI(AOI* aoi)
 {
     if (m_selectedAOIs.Contains(aoi))
@@ -274,7 +279,6 @@ void AStimulus::toggleSelectedAOI(AOI* aoi)
         m_selectedAOIs.Add(aoi);
 }
 
-//нарисовать кружочек на табле - часть API - private API
 void AStimulus::strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, float thickness, const FLinearColor& color) const
 {
     const int n = 8;
@@ -288,13 +292,11 @@ void AStimulus::strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, f
     }
 }
 
-//нарисовать кружочек на табле - часть API - private API
 void AStimulus::fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, const FLinearColor& color) const
 {
     cvs->K2_DrawPolygon(nullptr, pos, FVector2D(radius), 16, color);
 }
 
-//нарисовать квардарт на табле - часть API - private API
 void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, AOI* aoi) const
 {
     FVector2D pt = aoi->path[0];
@@ -306,9 +308,9 @@ void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float 
     cvs->K2_DrawLine(pt, aoi->path[0], th, color);
 }
 
-//нарисовать квардарт на табле - часть API - private API
 void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
 {
+    
 #ifdef EYE_DEBUG
     float th = FMath::Max(round((float)FMath::Max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
     strokeCircle(cvs, FVector2D(m_rawTarget.X * m_stimulusW, m_rawTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(1, 0, 0, 1));
@@ -322,16 +324,19 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
         drawContourOfAOI(cvs, FLinearColor(1, 0, 0, 1), th, m_activeAOI);
 #endif // EYE_DEBUG
 
-    if (!informant->m_mcRight->bHiddenInGame)
-        fillCircle(cvs, FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH), 10, FLinearColor(1, 0, 0, 1));
+     if (!informant->MC_Right->bHiddenInGame)
+         fillCircle(cvs, FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH), 10, FLinearColor(1, 0, 0, 1));
 
-    if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
-        fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * m_stimulusW, m_customCalibTarget.location.Y * m_stimulusH), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
+     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
+         fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * m_stimulusW, m_customCalibTarget.location.Y * m_stimulusH), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
+
+     if (GEngine)
+         GEngine->AddOnScreenDebugMessage(rand(), 5, FColor::Green, TEXT("countour updated"));
 }
 
 //----------------------- Private API -------------------------
 
-// private function - Должно остаться тут
+//not used
 UTexture2D* AStimulus::loadTexture2DFromFile(const FString& fullFilePath)
 {
     UTexture2D* loadedT2D = nullptr;
@@ -363,7 +368,6 @@ UTexture2D* AStimulus::loadTexture2DFromFile(const FString& fullFilePath)
     return loadedT2D;
 }
 
-//создать Texture2D из байтов. Должно остаться тут
 UTexture2D* AStimulus::loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt, int& w, int& h)
 {
     UTexture2D* loadedT2D = nullptr;
@@ -393,28 +397,27 @@ UTexture2D* AStimulus::loadTexture2DFromBytes(const TArray<uint8>& bytes, EImage
     return loadedT2D;
 }
 
-void AStimulus::SendDataToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, FString Id)
+void AStimulus::SendDataToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id)
 {
     auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
     //Send message to scivi
     FDateTime t = FDateTime::Now();
     float time = t.ToUnixTimestamp() * 1000.0f + t.GetMillisecond();
-    auto msg = FString::Printf(TEXT("%f %f %f %f %f %F %F %F %F %F %F %F %I %s"),
+    auto msg = FString::Printf(TEXT("%f %f %f %f %f %F %F %F %F %F %F %F %i %s"),
         time, uv.X, uv.Y,
         gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
         gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
-        gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, *Id);
+        gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, Id);
     GM->Broadcast(msg);
 }
-
-//используется только в калибровке
+//used only in calibration
 FVector AStimulus::billboardToScene(const FVector2D& pos) const
 {
     return GetTransform().TransformPosition(FVector(m_staticExtent.X * (2.0f * pos.X - 1.0f),
         m_staticExtent.Y * (2.0f * pos.Y - 1.0f),
         0.0f));
 }
-//много где - private API
+
 FVector2D AStimulus::sceneToBillboard(const FVector& pos) const
 {
     FVector local = GetTransform().InverseTransformPosition(pos);
@@ -436,7 +439,6 @@ AStimulus::AOI* AStimulus::findActiveAOI(const FVector2D& pt, int& out_index) co
 
 //------------------------ Custom Calibration ------------------------
 
-//для findBasis
 bool AStimulus::positiveOctant(const FVector gaze, const CalibPoint p1, const CalibPoint &p2, const CalibPoint &p3,
                                float &w1, float &w2, float &w3) const
 {
@@ -456,7 +458,6 @@ bool AStimulus::positiveOctant(const FVector gaze, const CalibPoint p1, const Ca
     return w1 >= 0.0f && w2 >= 0.0f && w3 >= 0.0f;
 }
 
-//для калибровки
 bool AStimulus::findBasis(const FVector &gaze, CalibPoint &cp1, CalibPoint &cp2, CalibPoint &cp3, float &w1, float &w2, float &w3) const
 {
     float thetaGaze = theta(gaze);
@@ -532,7 +533,6 @@ bool AStimulus::findBasis(const FVector &gaze, CalibPoint &cp1, CalibPoint &cp2,
     return true;
 }
 
-//применить калибровку
 void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeTarget, const FVector& gaze,
     FVector& correctedGazeTarget, bool& needsUpdateDynContour, float& cf)
 {
