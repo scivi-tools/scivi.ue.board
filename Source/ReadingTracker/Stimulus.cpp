@@ -3,17 +3,14 @@
 #include "Stimulus.h"
 #include "ReadingTrackerGameMode.h"
 #include "BaseInformant.h"
-
+#include "Components/WidgetComponent.h"
+#include "Components/Button.h"
 #include "SRanipalEye_FunctionLibrary.h"
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
 #include "SRanipalEye_Core.h"
 #include "IXRTrackingSystem.h"
 #include "Engine/CanvasRenderTarget2D.h"
-#include "ImageUtils.h"
-#include "IImageWrapperModule.h"
-#include "Misc/Base64.h"
-#include "GenericPlatform/GenericPlatformMath.h"
 
 //custom calibration
 static const constexpr int TARGET_MAX_RADIUS = 15;
@@ -65,9 +62,38 @@ FVector2D posForIdx(int idx)
 AStimulus::AStimulus()
 {
     PrimaryActorTick.bCanEverTick = true;
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("StaticMesh'/Engine/BasicShapes/Cube.Cube'"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WallMaterialAsset(TEXT("Material'/Game/StarterContent/Materials/M_Brick_Clay_New.M_Brick_Clay_New'"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> BoardMaterialAsset(TEXT("Material'/Game/Materials/BoardMat.BoardMat'"));
+    static ConstructorHelpers::FClassFinder<UUserWidget> CreateListWidgetClass(TEXT("/Game/UI/UI_CreateList_Menu"));
+    static ConstructorHelpers::FClassFinder<UUserWidget> CanvasWidgetClass(TEXT("/Game/UI/UI_Canvas"));
+
+    DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    RootComponent = DefaultSceneRoot;
+
+    wall = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Wall"));
+    wall->SetupAttachment(RootComponent);
+    wall->SetStaticMesh(CubeAsset.Object);
+    wall->SetMaterial(0, WallMaterialAsset.Object);
+    wall->SetRelativeScale3D(FVector(0.1f, 5.0f, 3.0f));
+    wall->SetRelativeLocation(FVector(0.0f, 0.0f, 150.0f));
+
+    Stimulus = CreateDefaultSubobject<UWidgetComponent>(TEXT("Canvas"));
+    Stimulus->SetupAttachment(RootComponent);
+    Stimulus->SetWidgetClass(CanvasWidgetClass.Class);
+    Stimulus->SetDrawSize(FVector2D(400.0f, 200.0f));
+    Stimulus->SetRelativeLocation(FVector(10.0f, 0.0f, 150.0f));
+    //canvas->SetRelativeScale3D(FVector(2.0f, 1.0f, 1.0f));
+    Stimulus->SetUsingAbsoluteScale(true);
+
+    CreateListButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("CreateListButton"));
+    CreateListButton->SetupAttachment(RootComponent);
+    CreateListButton->SetWidgetClass(CreateListWidgetClass.Class);
+    CreateListButton->SetDrawSize(FVector2D(500.0f, 75.0f));
+    CreateListButton->SetUsingAbsoluteScale(true);
+    CreateListButton->SetRelativeLocation(FVector(10.0f, 0.0f, 340.0f));
+    CreateListButton->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
     
-    mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-    RootComponent = mesh;
 
     m_aspect = 1.0f;
     m_scaleX = 1.0f;
@@ -88,10 +114,11 @@ AStimulus::AStimulus()
 void AStimulus::BeginPlay()
 {
     Super::BeginPlay();
-    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    if (GM)
-        GM->NotifyStimulusSpawned(this);
-    m_dynTex = mesh->CreateAndSetMaterialInstanceDynamic(0);
+    m_dynTex = Stimulus->CreateAndSetMaterialInstanceDynamic(0);
+    //set onClick event on createListButton
+    auto btn = Cast<UButton>(CreateListButton->GetWidget()->GetWidgetFromName(TEXT("btnCreateList")));
+    if (btn)
+        btn->OnClicked.AddDynamic(this, &AStimulus::OnClicked_CreateList);
 }
 
 void AStimulus::EndPlay(const EEndPlayReason::Type reason)
@@ -107,7 +134,14 @@ void AStimulus::Tick(float DeltaTime)
     if (m_needsUpdate)
     {
         FScopeLock lock(&m_mutex);
-        SetActorScale3D(FVector(m_aspect * 1.218 * m_scaleX, 1.218 * m_scaleY, 1.0));
+        auto new_scale = FVector(m_aspect * 1.218 * m_scaleX, 1.218 * m_scaleY, 1.0);
+        Stimulus->SetRelativeScale3D(new_scale);
+        //if image is wider then wall, expand wall
+        if (new_scale.Y > wall->GetComponentScale().Y)
+        {
+            auto sc = wall->GetRelativeScale3D();
+            wall->SetRelativeScale3D(FVector(sc.X, new_scale.Y, sc.Z));
+        }
         m_dynContour = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(GetWorld(), UCanvasRenderTarget2D::StaticClass(), m_dynTexW, m_dynTexH);
         m_dynContour->ClearColor = FLinearColor(0, 0, 0, 0);
         m_dynContour->OnCanvasRenderTargetUpdate.AddDynamic(this, &AStimulus::drawContour);
@@ -119,51 +153,48 @@ void AStimulus::Tick(float DeltaTime)
         m_selectedAOIs.Empty();
         m_dynContour->UpdateResource();
         m_staticTransform = GetTransform();
-        m_staticExtent = mesh->CalcLocalBounds().BoxExtent;
+        m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
         m_needsUpdate = false;
         OnImageUpdated();
     }
 }
 
-void AStimulus::updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois)
+void AStimulus::updateDynTex(const UTexture2D* texture, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois)
 {
-    int w, h;
-    UTexture2D* tex = loadTexture2DFromBytes(img, fmt, w, h);
-    if (tex)
+    m_dynTex->SetTextureParameterValue(TEXT("DynTex"), (UTexture*)texture);
     {
-        m_dynTex->SetTextureParameterValue(FName(TEXT("DynTex")), tex);
+        FScopeLock lock(&m_mutex);
+        m_aspect = (float)texture->GetSizeX() / (float)texture->GetSizeY();
+        m_scaleX = sx;
+        m_scaleY = sy;
+        m_dynTexW = texture->GetSizeX();
+        m_dynTexH = texture->GetSizeY();
+        m_dynAOIs.Empty();
+
+        //collect aois
+        for (auto value : aois)
         {
-            FScopeLock lock(&m_mutex);//чтобы пока обновл€ем текстуру не вызвалс€ в тике Update
-            m_aspect = (float)w / (float)h;
-            m_scaleX = sx;
-            m_scaleY = sy;
-            m_dynTexW = w;
-            m_dynTexH = h;
-            m_dynAOIs.Empty();
-            for (auto value : aois)
+            AOI aoi;
+            auto nameField = value->AsObject()->TryGetField("name");
+            if (nameField)
+                aoi.name = nameField->AsString();
+            auto pathField = value->AsObject()->TryGetField("path");
+            if (pathField)
             {
-                AOI aoi;
-                auto nameField = value->AsObject()->TryGetField("name");
-                if (nameField)
-                    aoi.name = nameField->AsString();
-                auto pathField = value->AsObject()->TryGetField("path");
-                if (pathField)
-                {
-                    auto path = pathField->AsArray();
-                    for (auto point : path)
-                        aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
-                }
-                auto bboxField = value->AsObject()->TryGetField("bbox");
-                if (bboxField)
-                {
-                    auto bbox = bboxField->AsArray();
-                    aoi.bbox.lt = FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber());
-                    aoi.bbox.rb = FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber());
-                }
-                m_dynAOIs.Add(aoi);
+                auto path = pathField->AsArray();
+                for (auto point : path)
+                    aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
             }
-            m_needsUpdate = true;
+            auto bboxField = value->AsObject()->TryGetField("bbox");
+            if (bboxField)
+            {
+                auto bbox = bboxField->AsArray();
+                aoi.bbox.lt = FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber());
+                aoi.bbox.rb = FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber());
+            }
+            m_dynAOIs.Add(aoi);
         }
+        //m_needsUpdate = true;
     }
 }
 
@@ -334,69 +365,6 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
          GEngine->AddOnScreenDebugMessage(rand(), 5, FColor::Green, TEXT("countour updated"));
 }
 
-//----------------------- Private API -------------------------
-
-//not used
-UTexture2D* AStimulus::loadTexture2DFromFile(const FString& fullFilePath)
-{
-    UTexture2D* loadedT2D = nullptr;
-
-    IImageWrapperModule& imageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-    TSharedPtr<IImageWrapper> imageWrapper = imageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
-
-    TArray<uint8> rawFileData;
-    if (!FFileHelper::LoadFileToArray(rawFileData, *fullFilePath))
-        return nullptr;
-
-    if (imageWrapper.IsValid() && imageWrapper->SetCompressed(rawFileData.GetData(), rawFileData.Num()))
-    {
-        TArray<uint8> uncompressedBGRA;
-        if (imageWrapper->GetRaw(ERGBFormat::BGRA, 8, uncompressedBGRA))
-        {
-            loadedT2D = UTexture2D::CreateTransient(imageWrapper->GetWidth(), imageWrapper->GetHeight(), PF_B8G8R8A8);
-            if (!loadedT2D)
-                return nullptr;
-
-            void* textureData = loadedT2D->PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
-            FMemory::Memcpy(textureData, uncompressedBGRA.GetData(), uncompressedBGRA.Num());
-            loadedT2D->PlatformData->Mips[0].BulkData.Unlock();
-
-            loadedT2D->UpdateResource();
-        }
-    }
-
-    return loadedT2D;
-}
-
-UTexture2D* AStimulus::loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt, int& w, int& h)
-{
-    UTexture2D* loadedT2D = nullptr;
-
-    IImageWrapperModule& imageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-    TSharedPtr<IImageWrapper> imageWrapper = imageWrapperModule.CreateImageWrapper(fmt);
-
-    if (imageWrapper.IsValid() && imageWrapper->SetCompressed(bytes.GetData(), bytes.Num()))
-    {
-        TArray<uint8> uncompressedBGRA;
-        if (imageWrapper->GetRaw(ERGBFormat::BGRA, 8, uncompressedBGRA))
-        {
-            w = imageWrapper->GetWidth();
-            h = imageWrapper->GetHeight();
-            loadedT2D = UTexture2D::CreateTransient(w, h, PF_B8G8R8A8);
-            if (!loadedT2D)
-                return nullptr;
-
-            void* textureData = loadedT2D->PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
-            FMemory::Memcpy(textureData, uncompressedBGRA.GetData(), uncompressedBGRA.Num());
-            loadedT2D->PlatformData->Mips[0].BulkData.Unlock();
-
-            loadedT2D->UpdateResource();
-        }
-    }
-
-    return loadedT2D;
-}
-
 void AStimulus::SendDataToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id)
 {
     auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
@@ -410,6 +378,13 @@ void AStimulus::SendDataToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index,
         gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, Id);
     GM->Broadcast(msg);
 }
+
+void AStimulus::OnClicked_CreateList()
+{
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    GM->CreateListOfWords();
+}
+
 //used only in calibration
 FVector AStimulus::billboardToScene(const FVector2D& pos) const
 {

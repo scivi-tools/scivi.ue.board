@@ -28,20 +28,32 @@ public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	int MaxWallsCount = 6;
+
+	UFUNCTION(BlueprintCallable)
+	AActor* RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint);
+
 	//----------------- Scene ----------------------
 public:
-	void NotifyStimulusSpawned(class AStimulus* _stimulus);
 	void NotifyInformantSpawned(class ABaseInformant* _informant);
-	AActor* RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint);
+	
 	UFUNCTION(BlueprintCallable)
 	void CreateListOfWords();
+	UFUNCTION(BlueprintCallable)
+	void DeleteList(AWordListWall* const wall);
+	UFUNCTION(BlueprintCallable)
+	void ReplaceWalls(float stimulus_remoteness);
 protected:
 	class AStimulus* stimulus;
 	class ABaseInformant* informant;
-	TArray<class WordListWall*> walls;
+	TArray<class AWordListWall*> walls;
+	bool direction_of_search = false;
+	int created_walls_count = 0;
 
 	//------------------- VR ----------------------
 public:
+	UFUNCTION(BlueprintCallable)
 	void CalibrateVR();
 	UPROPERTY(EditAnywhere)
 	SupportedEyeVersion EyeVersion;
@@ -49,13 +61,12 @@ public:
 //----------------------- SciVi networking --------------
 public:
 	void Broadcast(FString& message);
+
 protected:
 	using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
 	void initWS();
 	void wsRun() { m_server.start(); }
 	WSServer m_server;
 	TUniquePtr<std::thread> m_serverThread;//you can't use std::thread in UE4, because ue4 can't destroy it then gave is exiting
-	FCriticalSection server_launching_mutex;
-	bool server_started = false;
 	
 };

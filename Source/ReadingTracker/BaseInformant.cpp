@@ -21,21 +21,20 @@ ABaseInformant::ABaseInformant()
 	AutoReceiveInput = EAutoReceiveInput::Player0;
 	//create components
 	CameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
-	CameraComponent->SetRelativeLocation(FVector(0, 0, 80));
 	CameraComponent->SetupAttachment(RootComponent);
+	CameraComponent->SetRelativeLocation(FVector(0, 0, 80));
 	MC_Left = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MC_Left"));
-	MC_Left->MotionSource = FXRMotionControllerBase::LeftHandSourceId;
 	MC_Left->SetupAttachment(RootComponent);
+	MC_Left->MotionSource = FXRMotionControllerBase::LeftHandSourceId;
 	MC_Left_Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MCLeft_Mesh"));
 	MC_Left_Mesh->SetupAttachment(MC_Left);
 	MC_Left_Mesh->SetRelativeRotation(FRotator(0.0f, 90.0f, 90.0f));
-	MC_Left_Lazer = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("MCLeft_Lazer"));
-	MC_Left_Lazer->SetupAttachment(MC_Left);
-	MC_Left_Lazer->bShowDebug = true;
-	MC_Left_Lazer->DebugColor = FColor::Green;
-	//MC_Left_Lazer-> = 0.25f;
-	MC_Left_Lazer->InteractionDistance = 750.0f;
-	MC_Left_Lazer->SetHiddenInGame(false);
+	MC_Left_Interaction_Lazer = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("MCLeft_Lazer"));
+	MC_Left_Interaction_Lazer->SetupAttachment(MC_Left);
+	MC_Left_Interaction_Lazer->bShowDebug = true;
+	MC_Left_Interaction_Lazer->DebugColor = FColor::Green;
+	MC_Left_Interaction_Lazer->InteractionDistance = 750.0f;
+	MC_Left_Interaction_Lazer->SetHiddenInGame(false);
 
 	MC_Right = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MC_Right"));
 	MC_Right->MotionSource = FXRMotionControllerBase::RightHandSourceId;
@@ -43,13 +42,12 @@ ABaseInformant::ABaseInformant()
 	MC_Right_Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MCRight_Mesh"));
 	MC_Right_Mesh->SetupAttachment(MC_Right);
 	MC_Right_Mesh->SetRelativeRotation(FRotator(0.0f, 90.0f, 90.0f));
-	MC_Right_Lazer = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("MCRight_Lazer"));
-	MC_Right_Lazer->SetupAttachment(MC_Right);
-	MC_Right_Lazer->bShowDebug = true;
-	MC_Right_Lazer->DebugColor = FColor::Green;
-	//MC_Right_Lazer->ArrowSize = 0.25f;
-	MC_Right_Lazer->InteractionDistance = 750.0f;
-	MC_Right_Lazer->SetHiddenInGame(false);
+	MC_Right_Interaction_Lazer = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("MCRight_Lazer"));
+	MC_Right_Interaction_Lazer->SetupAttachment(MC_Right);
+	MC_Right_Interaction_Lazer->bShowDebug = true;
+	MC_Right_Interaction_Lazer->DebugColor = FColor::Green;
+	MC_Right_Interaction_Lazer->InteractionDistance = 750.0f;
+	MC_Right_Interaction_Lazer->SetHiddenInGame(false);
 }
 
 // Called when the game starts or when spawned
@@ -88,11 +86,15 @@ void ABaseInformant::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	InputComponent->BindAction("RTrigger", IE_Pressed, this, &ABaseInformant::OnTriggerPressed);
 	InputComponent->BindAction("RTrigger", IE_Released, this, &ABaseInformant::OnTriggerReleased);
+	InputComponent->BindAxis("CameraMove_RightLeft", this, &ABaseInformant::CameraMove_LeftRight);
+	InputComponent->BindAxis("CameraMove_UpDown", this, &ABaseInformant::CameraMove_UpDown);
 }
 
 void ABaseInformant::OnTriggerPressed()
 {
-	
+	//start event of clicking
+	FKey LMB(TEXT("LeftMouseButton"));
+	MC_Right_Interaction_Lazer->PressPointerKey(LMB);
 	const float ray_length = 1000.0f;
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 	FGaze gaze;
@@ -102,8 +104,6 @@ void ABaseInformant::OnTriggerPressed()
 	{
 		FVector trigger_ray = MC_Right->GetComponentLocation() +
 			MC_Right->GetForwardVector() * ray_length;
-		if (GEngine)
-			GEngine->AddOnScreenDebugMessage(rand(), 10, FColor::Green, trigger_ray.ToCompactString());
 		AStimulus* triggeredStimulus = Cast<AStimulus>(GM->RayTrace(this, MC_Right->GetComponentLocation(),
 			trigger_ray, hitPoint));
 		if (triggeredStimulus)
@@ -115,6 +115,9 @@ void ABaseInformant::OnTriggerPressed()
 
 void ABaseInformant::OnTriggerReleased()
 {
+	//start event of clicking
+	FKey LMB(TEXT("LeftMouseButton"));
+	MC_Right_Interaction_Lazer->ReleasePointerKey(LMB);
 	const float ray_length = 1000.0f;
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 	FGaze gaze;
@@ -131,6 +134,16 @@ void ABaseInformant::OnTriggerReleased()
 			triggeredStimulus->OnTriggerReleased(gaze, hitPoint);
 		}
 	}
+}
+
+void ABaseInformant::CameraMove_LeftRight(float value)
+{
+	CameraComponent->AddLocalRotation(FRotator(0.0f, value, 0.0f));
+}
+
+void ABaseInformant::CameraMove_UpDown(float value)
+{
+	CameraComponent->AddLocalRotation(FRotator(value, 0.0f, 0.0f));
 }
 
 void ABaseInformant::ToggleMotionController(bool visiblity)

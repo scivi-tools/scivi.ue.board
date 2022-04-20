@@ -36,6 +36,8 @@ public:
 
 	void OnTriggerPressed();
 	void OnTriggerReleased();
+	void CameraMove_LeftRight(float value);
+	void CameraMove_UpDown(float value);
 
 	void ToggleMotionController(bool visiblity);
 
@@ -45,18 +47,18 @@ public:
 	UCameraComponent* CameraComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	UMotionControllerComponent* MC_Left = nullptr;
+	UMotionControllerComponent* MC_Left;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	UStaticMeshComponent* MC_Left_Mesh = nullptr;
+	UStaticMeshComponent* MC_Left_Mesh;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	class UWidgetInteractionComponent* MC_Left_Lazer = nullptr;
+	class UWidgetInteractionComponent* MC_Left_Interaction_Lazer;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	UMotionControllerComponent* MC_Right = nullptr;
+	UMotionControllerComponent* MC_Right;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	UStaticMeshComponent* MC_Right_Mesh = nullptr;
+	UStaticMeshComponent* MC_Right_Mesh;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	class UWidgetInteractionComponent* MC_Right_Lazer = nullptr;
+	class UWidgetInteractionComponent* MC_Right_Interaction_Lazer;
 
 	
 };

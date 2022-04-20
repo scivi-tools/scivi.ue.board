@@ -8,7 +8,6 @@
 #include "IImageWrapper.h"
 #include "Stimulus.generated.h"
 
-
 //#define EYE_DEBUG
 //#define COLLECCT_ANGULAR_ERROR
 //#define MEASURE_ANGULAR_SIZES
@@ -23,7 +22,7 @@ public:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type reason) override;
     virtual void Tick(float DeltaTime) override;
-    void updateDynTex(const TArray<uint8>& img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois);
+    void updateDynTex(const UTexture2D* texture, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois);
     UFUNCTION()
     void drawContour(UCanvas* cvs, int32 w, int32 h);
     void BindInformant(class ABaseInformant* _informant);
@@ -37,17 +36,25 @@ public:
     UFUNCTION(BlueprintCallable)
     void customCalibrate();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    class UStaticMeshComponent* mesh;
+    UPROPERTY(EditAnywhere, BlueprintReadonly, Category = Wall)
+    USceneComponent* DefaultSceneRoot;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Wall)
+    class UWidgetComponent* Stimulus;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Wall)
+    class UStaticMeshComponent* wall;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=UI)
+    class UWidgetComponent* CreateListButton;
     //----------------- Private API -----------------
 protected:
     void SendDataToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
+    UFUNCTION()
+    void OnClicked_CreateList();
 
     FVector billboardToScene(const FVector2D& pos) const;
     FVector2D sceneToBillboard(const FVector& pos) const;
-    UTexture2D* loadTexture2DFromFile(const FString& fullFilePath);
-    UTexture2D* loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt, int& w, int& h);
 
     struct BBox
     {
@@ -87,9 +94,6 @@ protected:
 
     //collision detection
     AOI* findActiveAOI(const FVector2D& pt, int& out_index) const;
-    //bool castRay(const FVector& origin, const FVector& end, FVector& hitPoint) const;
-    //bool IsInFocus(FVector& gazeOrigin, FVector& rawGazeTarget, FVector& correctedGazeTarget,
-    //   float& leftPupilDiam, float& rightPupilDiam, bool& needsUpdateDynContour, float& cf);
 
     class ABaseInformant* informant = nullptr;
     FVector2D m_laser;
@@ -105,11 +109,6 @@ protected:
     int m_dynTexH;
     TArray<AOI> m_dynAOIs;
     FThreadSafeBool m_needsUpdate;
-    
-
-    //bool m_inSelectionMode;
-    //bool m_rReleased;
-    //bool m_imgUpdated;
     int m_stimulusW;
     int m_stimulusH;
     TArray<AOI> m_aois;
@@ -122,6 +121,7 @@ protected:
     FVector2D m_camTarget;
 #endif // EYE_DEBUG
 
+    //custom calibration
 
     struct CalibPoint
     {
@@ -143,7 +143,7 @@ protected:
         Done
     };
 
-    //custom calibration
+    
     bool positiveOctant(const FVector gaze, const CalibPoint p1, const CalibPoint& p2, const CalibPoint& p3, float& w1, float& w2, float& w3) const;
     bool findBasis(const FVector& gaze, CalibPoint& cp1, CalibPoint& cp2, CalibPoint& cp3, float& w1, float& w2, float& w3) const;
     void applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeTarget, const FVector& gaze,

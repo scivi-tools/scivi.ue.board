@@ -3,13 +3,77 @@
 
 #include "ReadingTrackerGameMode.h"
 #include "Stimulus.h"
+#include "BaseInformant.h"
+#include "WordListWall.h"
+#include "ImageUtils.h"
 #include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "Json.h"
 #include "Misc/Base64.h"
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
-#include "BaseInformant.h"
-#include "WordListWall.h"
+
+UTexture2D* loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt)
+{
+    UTexture2D* loadedT2D = nullptr;
+
+    IImageWrapperModule& imageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
+    TSharedPtr<IImageWrapper> imageWrapper = imageWrapperModule.CreateImageWrapper(fmt);
+
+    if (imageWrapper.IsValid() && imageWrapper->SetCompressed(bytes.GetData(), bytes.Num()))
+    {
+        TArray<uint8> uncompressedBGRA;
+        if (imageWrapper->GetRaw(ERGBFormat::BGRA, 8, uncompressedBGRA))
+        {
+            int w = imageWrapper->GetWidth();
+            int h = imageWrapper->GetHeight();
+            loadedT2D = UTexture2D::CreateTransient(w, h, PF_B8G8R8A8);
+            if (!loadedT2D)
+                return nullptr;
+
+            void* textureData = loadedT2D->PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+            FMemory::Memcpy(textureData, uncompressedBGRA.GetData(), uncompressedBGRA.Num());
+            loadedT2D->PlatformData->Mips[0].BulkData.Unlock();
+
+            loadedT2D->UpdateResource();
+        }
+    }
+
+    return loadedT2D;
+}
+
+UTexture2D* loadTexture2DFromFile(const FString& fullFilePath)
+{
+    UTexture2D* loadedT2D = nullptr;
+
+    IImageWrapperModule& imageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
+    TSharedPtr<IImageWrapper> imageWrapper = imageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
+
+    TArray<uint8> rawFileData;
+    if (!FFileHelper::LoadFileToArray(rawFileData, *fullFilePath))
+        return nullptr;
+
+    if (imageWrapper.IsValid() && imageWrapper->SetCompressed(rawFileData.GetData(), rawFileData.Num()))
+    {
+        TArray<uint8> uncompressedBGRA;
+        if (imageWrapper->GetRaw(ERGBFormat::BGRA, 8, uncompressedBGRA))
+        {
+            loadedT2D = UTexture2D::CreateTransient(imageWrapper->GetWidth(), imageWrapper->GetHeight(), PF_B8G8R8A8);
+            if (!loadedT2D)
+                return nullptr;
+
+            void* textureData = loadedT2D->PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+            FMemory::Memcpy(textureData, uncompressedBGRA.GetData(), uncompressedBGRA.Num());
+            loadedT2D->PlatformData->Mips[0].BulkData.Unlock();
+
+            loadedT2D->UpdateResource();
+        }
+    }
+
+    return loadedT2D;
+}
+
+//-------------------------- API ------------------------
 
 void AReadingTrackerGameMode::BeginPlay()
 {
@@ -26,27 +90,116 @@ void AReadingTrackerGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
     SRanipalEye_Framework::Instance()->StopFramework();
 }
 
-void AReadingTrackerGameMode::NotifyStimulusSpawned(AStimulus* _stimulus)
+AActor* AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint)
 {
-    FScopeLock lock(&server_launching_mutex);
-    stimulus = _stimulus;
-    if (stimulus && informant && !server_started)
+    const float ray_thickness = 1.0f;
+    FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, ignoreActor);
+    traceParam.bTraceComplex = true;
+    traceParam.bReturnPhysicalMaterial = false;
+    FHitResult hitResult(ForceInit);
+    bool is_collided;
+
+    if (ray_thickness <= 0.0f)
     {
-        stimulus->BindInformant(informant);
-        initWS();
+        is_collided = GetWorld()->LineTraceSingleByChannel(hitResult, origin, end,
+            ECollisionChannel::ECC_WorldStatic, traceParam);
     }
+    else
+    {
+        FCollisionShape sph = FCollisionShape();
+        sph.SetSphere(ray_thickness);
+        is_collided = GetWorld()->SweepSingleByChannel(hitResult, origin, end, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
+            ECollisionChannel::ECC_WorldStatic, sph, traceParam);
+    }
+
+    if (is_collided) {
+        hitPoint = hitResult.Location;
+        return hitResult.Actor.Get();
+    }
+    return nullptr;
 }
+
+// -------------------------- Scene modification ------------------
 
 void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
 {
-    FScopeLock lock(&server_launching_mutex);
     informant = _informant;
-    if (stimulus && informant && !server_started) 
+    stimulus = GetWorld()->SpawnActor<AStimulus>(AStimulus::StaticClass());
+    stimulus->BindInformant(informant);
+    //create walls(but they invisible)
+    for (int i = 0; i < MaxWallsCount; i++)
     {
-        stimulus->BindInformant(informant);
-        initWS();
+        auto wall = GetWorld()->SpawnActor<AWordListWall>(AWordListWall::StaticClass());
+        wall->SetVisibility(false);
+        wall->SetWallName(FString::Printf(TEXT("Wall %i"), i + 1));
+        walls.Add(wall);
     }
+    ReplaceWalls(510.0f);
+    initWS();
+
 }
+
+void AReadingTrackerGameMode::CreateListOfWords()
+{
+    AWordListWall* hidden_wall = *walls.FindByPredicate([](AWordListWall* x) {return x->IsHiddenInGame(); });
+    hidden_wall->SetVisibility(true);
+}
+
+void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
+{
+    wall->SetVisibility(false);
+}
+
+void AReadingTrackerGameMode::ReplaceWalls(float radius)
+{
+    auto& player_transform = informant->GetTransform();
+    auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - thickness, y - width, z - height
+    float width = 2.0 * BB.Y;// width of one wall
+    if (radius < width)
+        radius = width;
+    float player_Z = player_transform.GetLocation().Z;
+    //place stimulus in front of informant
+    stimulus->SetActorLocation(player_transform.GetLocation());
+    stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
+    stimulus->SetActorRotation(player_transform.GetRotation());
+    stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
+
+    //place other walls around the informant (if walls count is odd, then the last will placed later)
+    float angle_per_wall = 2.0f * PI / (float)(MaxWallsCount + 1);
+    float angle = PI / 2.0f - angle_per_wall;//initial angle
+    for (int i = 0; i < MaxWallsCount / 2; ++i, angle -= angle_per_wall)
+    {
+        float cos = FMath::Cos(angle) * radius;
+        float sin = FMath::Sin(angle) * radius;
+        walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(cos, sin, -player_Z));
+        walls[2 * i]->SetActorRotation(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f));
+        walls[2 * i]->SetActorScale3D(FVector(1.0f, width / 100.0f, 1.0f));
+
+        walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-cos, sin, -player_Z));
+        walls[2 * i + 1]->SetActorRotation(FRotator(0.0f, -FMath::RadiansToDegrees(angle), 0.0f));
+        walls[2 * i + 1]->SetActorScale3D(FVector(1.0f, width / 100.0f, 1.0f));
+    }
+    //if walls_count is odd, place last wall in back of informant
+    if (MaxWallsCount % 2 == 1)
+    {
+        int i = MaxWallsCount - 1;
+        walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0, -radius, -player_Z));
+        walls[i]->SetActorRotation(player_transform.GetRotation());
+        walls[i]->SetActorScale3D(FVector(1.0f, width / 100.0f, 1.0f));
+    }
+
+    //So strange algorithm for placing the walls is for sorting the walls by remoteness from stimulus.
+    //Later you can just find first hidden wall(it will be nearest hidden wall to stimulus) and unhide it
+}
+
+// ---------------------- VR -------------------------
+
+void AReadingTrackerGameMode::CalibrateVR()
+{
+    ViveSR::anipal::Eye::LaunchEyeCalibration(nullptr);
+}
+
+//---------------------- SciVi communication ------------------
 
 void AReadingTrackerGameMode::initWS()
 {
@@ -91,7 +244,13 @@ void AReadingTrackerGameMode::initWS()
                 }
                 if (fmt != EImageFormat::Invalid &&
                     FBase64::Decode(&(image.GetCharArray()[startPos]), img))
-                    stimulus->updateDynTex(img, fmt, jsonParsed->GetNumberField("scaleX"), jsonParsed->GetNumberField("scaleY"), jsonParsed->GetArrayField("AOIs"));
+                {
+                    float sx = jsonParsed->GetNumberField("scaleX");
+                    float sy = jsonParsed->GetNumberField("scaleY");
+                    UTexture2D* texture = loadTexture2DFromBytes(img, fmt);
+                    if (texture)
+                        stimulus->updateDynTex(texture, sx , sy, jsonParsed->GetArrayField("AOIs"));
+                }
             }
         }
     };
@@ -117,12 +276,6 @@ void AReadingTrackerGameMode::initWS()
     };
 
     m_serverThread.Reset(new std::thread(&AReadingTrackerGameMode::wsRun, this));
-    server_started = true;
-}
-
-void AReadingTrackerGameMode::CalibrateVR()
-{
-    ViveSR::anipal::Eye::LaunchEyeCalibration(nullptr);
 }
 
 void AReadingTrackerGameMode::Broadcast(FString& message)
@@ -130,37 +283,3 @@ void AReadingTrackerGameMode::Broadcast(FString& message)
     for (auto& connection : m_server.get_connections())//broadcast to everyone
         connection->send(TCHAR_TO_ANSI(*message));
 }
-
-AActor* AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint)
-{
-    const float ray_thickness = 1.0f;
-    FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, ignoreActor);
-    traceParam.bTraceComplex = true;
-    traceParam.bReturnPhysicalMaterial = false;
-    FHitResult hitResult(ForceInit);
-    bool is_collided;
-
-    if (ray_thickness <= 0.0f)
-    {
-        is_collided = GetWorld()->LineTraceSingleByChannel(hitResult, origin, end,
-            ECollisionChannel::ECC_WorldStatic, traceParam);
-    }
-    else
-    {
-        FCollisionShape sph = FCollisionShape();
-        sph.SetSphere(ray_thickness);
-        is_collided = GetWorld()->SweepSingleByChannel(hitResult, origin, end, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
-            ECollisionChannel::ECC_WorldStatic, sph, traceParam);
-    }
-
-    if (is_collided) {
-        hitPoint = hitResult.Location;
-        return hitResult.Actor.Get();
-    }
-    return nullptr;
-}
-
-void AReadingTrackerGameMode::CreateListOfWords()
-{
-}
-

@@ -18,11 +18,23 @@ public:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
+	UFUNCTION(BlueprintCallable)
+	bool IsHiddenInGame() const;
+	UFUNCTION(BlueprintCallable)
+	void SetVisibility(bool is_visible);
+	void SetWallName(const FString& name);
+
+
 	UPROPERTY(Category = Wall, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
-	USceneComponent* Root;
+	USceneComponent* DefaultSceneRoot;
 	UPROPERTY(Category = Wall, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	UStaticMeshComponent* Mesh;
 	UPROPERTY(Category = UI, EditAnywhere, BlueprintReadonly)
-	class UWidgetComponent* DeleteButton;
-
+	class UWidgetComponent* ListHeader;
+	UPROPERTY(Category = UI, EditAnywhere, BlueprintReadonly)
+	class UWidgetComponent* List;
+protected:
+	UFUNCTION()
+	void OnClicked_DeleteList();
+	bool bHiddenInGame = false;
 };
