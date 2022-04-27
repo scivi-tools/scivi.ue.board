@@ -6,11 +6,14 @@
 #include "GameFramework/Actor.h"
 #include "Engine/Canvas.h"
 #include "IImageWrapper.h"
+#include "ReadingTrackerGameMode.h"
 #include "Stimulus.generated.h"
 
 //#define EYE_DEBUG
 //#define COLLECCT_ANGULAR_ERROR
 //#define MEASURE_ANGULAR_SIZES
+
+
 
 UCLASS()
 class READINGTRACKER_API AStimulus : public AActor
@@ -20,16 +23,18 @@ public:
     //----------------- API ---------------------
     AStimulus();
     virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type reason) override;
-    virtual void Tick(float DeltaTime) override;
-    void updateDynTex(const UTexture2D* texture, float sx, float sy, const TArray<TSharedPtr<FJsonValue>>& aois);
-    UFUNCTION()
-    void drawContour(UCanvas* cvs, int32 w, int32 h);
+    void updateDynTex(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs);
     void BindInformant(class ABaseInformant* _informant);
-    void OnInFocus(const struct FGaze& gaze, const FVector& FocusPoint);
-    void OnTriggerPressed(const struct FGaze& gaze, const FVector& FocusPoint);
-    void OnTriggerReleased(const struct FGaze& gaze, const FVector& FocusPoint);
+    void UpdateContours();
+
+    // ----------------- Input events -------------------
+    void OnInFocus(const struct FGaze& gaze, const FHitResult& hitPoint);
+    void OnTriggerPressed(const FHitResult& hitPoint);
+    void OnTriggerReleased(const FHitResult& hitPoint);
     void OnImageUpdated();
+
+    TArray<FAOI> AOIs;
+    TArray<const FAOI*> SelectedAOIs;
 
     //UFUNCTION(BlueprintCallable)
     //void trigger(bool isPressed);
@@ -49,71 +54,36 @@ public:
     class UWidgetComponent* CreateListButton;
     //----------------- Private API -----------------
 protected:
-    void SendDataToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
     UFUNCTION()
     void OnClicked_CreateList();
+    void SendDataToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
 
     FVector billboardToScene(const FVector2D& pos) const;
     FVector2D sceneToBillboard(const FVector& pos) const;
 
-    struct BBox
-    {
-        FVector2D lt;
-        FVector2D rb;
-        inline bool IsPointInside(const FVector2D& pt) const
-        {
-            return pt.X >= lt.X && pt.Y >= lt.Y && pt.X <= rb.X && pt.Y <= rb.Y;
-        }
-    };
-    struct AOI
-    {
-        FString name;
-        TArray<FVector2D> path;
-        BBox bbox;
-        inline bool IsPointInside(const FVector2D& pt) const
-        {
-            //check point in polygon
-            bool IsInPolygon = false;
-            int n = path.Num();
-            for (int i = 0, j = n - 1; i < n; j = i++)
-            {
-                if (((path[i].Y > pt.Y) != (path[j].Y > pt.Y)) &&
-                    (pt.X < (path[j].X - path[i].X) * (pt.Y - path[i].Y) /
-                        (path[j].Y - path[i].Y) + path[i].X))
-                    IsInPolygon = !IsInPolygon;
-            }
-            return bbox.IsPointInside(pt) && IsInPolygon;
-        }
-    };
-
     //draw functions
+    UFUNCTION()
+    void drawContour(UCanvas* cvs, int32 w, int32 h);
     void strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, float thickness, const FLinearColor& color) const;
     void fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, const FLinearColor& color) const;
-    void drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, AOI* aoi) const;
-    void toggleSelectedAOI(AOI* aoi);
+    void drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const FAOI* aoi) const;
+    void toggleSelectedAOI(const FAOI* aoi);
 
     //collision detection
-    AOI* findActiveAOI(const FVector2D& pt, int& out_index) const;
+    FAOI* findAOI(const FVector2D& pt, int& out_index) const;
 
     class ABaseInformant* informant = nullptr;
     FVector2D m_laser;
-    
+   
+
     //dynamic texture
-    class UMaterialInstanceDynamic* m_dynTex = nullptr;
+    UPROPERTY(EditAnywhere)
+    UMaterialInterface *base_material;
+    class UMaterialInstanceDynamic* m_dynMat = nullptr;
     class UCanvasRenderTarget2D* m_dynContour = nullptr;
-    FCriticalSection m_mutex;//for dynTEx
-    float m_aspect;
-    float m_scaleX;
-    float m_scaleY;
-    int m_dynTexW;
-    int m_dynTexH;
-    TArray<AOI> m_dynAOIs;
-    FThreadSafeBool m_needsUpdate;
-    int m_stimulusW;
-    int m_stimulusH;
-    TArray<AOI> m_aois;
-    AOI* m_activeAOI;
-    TArray<AOI*> m_selectedAOIs;
+    UPROPERTY()
+    const UTexture2D* image;
+    
 
 #ifdef EYE_DEBUG
     FVector2D m_rawTarget;

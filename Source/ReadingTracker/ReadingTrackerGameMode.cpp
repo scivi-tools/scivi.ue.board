@@ -27,7 +27,8 @@ UTexture2D* loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt)
         {
             int w = imageWrapper->GetWidth();
             int h = imageWrapper->GetHeight();
-            loadedT2D = UTexture2D::CreateTransient(w, h, PF_B8G8R8A8);
+            loadedT2D = UTexture2D::CreateTransient(w, h);
+            loadedT2D->AddToRoot();
             if (!loadedT2D)
                 return nullptr;
 
@@ -73,50 +74,99 @@ UTexture2D* loadTexture2DFromFile(const FString& fullFilePath)
     return loadedT2D;
 }
 
+void CopyTexture2DFragment(UTexture2D* destination, const UTexture2D* source, int start_x, int start_y, int width, int height)
+{
+    auto dst_size = FVector2D(destination->GetSizeX(), destination->GetSizeY());
+    auto &src_bulk = source->PlatformData->Mips[0].BulkData;
+    auto &dst_bulk = destination->PlatformData->Mips[0].BulkData;
+
+    auto src_pixels = static_cast<const FColor*>(src_bulk.LockReadOnly());
+    auto dst_pixels = static_cast<FColor*>(dst_bulk.Lock(LOCK_READ_WRITE));
+    for (int y = 0; y < height; ++y)
+        FMemory::Memcpy(dst_pixels + y * destination->GetSizeX(),
+                    src_pixels + (y + start_y) * source->GetSizeX() + start_x,
+                    width * sizeof(FColor));
+    src_bulk.Unlock();
+    dst_bulk.Unlock();
+    destination->UpdateResource();
+}
+
 //-------------------------- API ------------------------
+
+AReadingTrackerGameMode::AReadingTrackerGameMode(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+    PrimaryActorTick.bStartWithTickEnabled = true;
+    PrimaryActorTick.bCanEverTick = true;
+}
 
 void AReadingTrackerGameMode::BeginPlay()
 {
+    Super::BeginPlay();
     auto instance = SRanipalEye_Framework::Instance();
     if (instance)
         instance->StartFramework(EyeVersion);
 }
 
+void AReadingTrackerGameMode::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+    FString json_text;
+    if (message_queue.Dequeue(json_text))
+    {
+        TSharedPtr<FJsonObject> jsonParsed;
+        TSharedRef<TJsonReader<TCHAR>> jsonReader = TJsonReaderFactory<TCHAR>::Create(json_text);
+        if (FJsonSerializer::Deserialize(jsonReader, jsonParsed))
+        {
+            if (jsonParsed->TryGetField("calibrate"))
+                CalibrateVR();
+            else if (jsonParsed->TryGetField("customCalibrate"))
+                stimulus->customCalibrate();
+            else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
+            {
+                auto PC = GetWorld()->GetFirstPlayerController();
+                bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
+                informant->SetVisibility_MC_Right(visibility);
+            }
+            else {
+                for (auto wall : walls) 
+                {
+                    wall->SetVisibility(false);
+                    wall->ClearList();
+                }
+                ParseNewImage(jsonParsed);
+            }
+        }
+
+    }
+}
+
 void AReadingTrackerGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    Super::EndPlay(EndPlayReason);
     m_server.stop();
     m_serverThread->join();
     m_serverThread.Reset();
     SRanipalEye_Framework::Instance()->StopFramework();
 }
 
-AActor* AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint)
+bool AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FHitResult& hitResult)
 {
     const float ray_thickness = 1.0f;
     FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, ignoreActor);
-    traceParam.bTraceComplex = true;
     traceParam.bReturnPhysicalMaterial = false;
-    FHitResult hitResult(ForceInit);
-    bool is_collided;
 
     if (ray_thickness <= 0.0f)
     {
-        is_collided = GetWorld()->LineTraceSingleByChannel(hitResult, origin, end,
-            ECollisionChannel::ECC_WorldStatic, traceParam);
+        return GetWorld()->LineTraceSingleByChannel(hitResult, origin, end,
+            Stimulus_Channel, traceParam);
     }
     else
     {
         FCollisionShape sph = FCollisionShape();
         sph.SetSphere(ray_thickness);
-        is_collided = GetWorld()->SweepSingleByChannel(hitResult, origin, end, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
-            ECollisionChannel::ECC_WorldStatic, sph, traceParam);
+        return GetWorld()->SweepSingleByChannel(hitResult, origin, end, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
+            Stimulus_Channel, sph, traceParam);
     }
-
-    if (is_collided) {
-        hitPoint = hitResult.Location;
-        return hitResult.Actor.Get();
-    }
-    return nullptr;
 }
 
 // -------------------------- Scene modification ------------------
@@ -129,9 +179,12 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
     //create walls(but they invisible)
     for (int i = 0; i < MaxWallsCount; i++)
     {
-        auto wall = GetWorld()->SpawnActor<AWordListWall>(AWordListWall::StaticClass());
+        auto wall_name = FString::Printf(TEXT("Wall %i"), i + 1);
+        FActorSpawnParameters params;
+        params.Name = FName(wall_name);
+        auto wall = GetWorld()->SpawnActor<AWordListWall>(AWordListWall::StaticClass(), params);
         wall->SetVisibility(false);
-        wall->SetWallName(FString::Printf(TEXT("Wall %i"), i + 1));
+        wall->SetWallName(wall_name);
         walls.Add(wall);
     }
     ReplaceWalls(510.0f);
@@ -141,22 +194,23 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
 
 void AReadingTrackerGameMode::CreateListOfWords()
 {
-    AWordListWall* hidden_wall = *walls.FindByPredicate([](AWordListWall* x) {return x->IsHiddenInGame(); });
-    hidden_wall->SetVisibility(true);
+    for(auto wall: walls)
+        if (wall->IsHiddenInGame()) 
+        {
+            wall->SetVisibility(true);
+            break;
+        }
 }
 
 void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
 {
     wall->SetVisibility(false);
+    wall->ClearList();
 }
 
 void AReadingTrackerGameMode::ReplaceWalls(float radius)
 {
     auto& player_transform = informant->GetTransform();
-    auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - thickness, y - width, z - height
-    float width = 2.0 * BB.Y;// width of one wall
-    if (radius < width)
-        radius = width;
     float player_Z = player_transform.GetLocation().Z;
     //place stimulus in front of informant
     stimulus->SetActorLocation(player_transform.GetLocation());
@@ -164,35 +218,49 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     stimulus->SetActorRotation(player_transform.GetRotation());
     stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
 
-    //place other walls around the informant (if walls count is odd, then the last will placed later)
-    float angle_per_wall = 2.0f * PI / (float)(MaxWallsCount + 1);
-    float angle = PI / 2.0f - angle_per_wall;//initial angle
+    //it gets a BBox considering an object's rotation
+    auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
+
+    int n = 2 * MaxWallsCount - 2;
+    float width = BB.X;// width of one wall = half of width of stimulus
+    //place other walls around the informant
+    float angle_per_wall = 2.0f * PI / (float)n;
+    float angle = 0.0f;
     for (int i = 0; i < MaxWallsCount / 2; ++i, angle -= angle_per_wall)
     {
-        float cos = FMath::Cos(angle) * radius;
-        float sin = FMath::Sin(angle) * radius;
-        walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(cos, sin, -player_Z));
+        float x_offset = FMath::Cos(angle) * radius;
+        float y_offset = FMath::Sin(angle) * radius + radius / 2.0f;
+        walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(x_offset, y_offset, -player_Z));
         walls[2 * i]->SetActorRotation(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f));
-        walls[2 * i]->SetActorScale3D(FVector(1.0f, width / 100.0f, 1.0f));
+        walls[2 * i]->SetWallWidth(width);
 
-        walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-cos, sin, -player_Z));
+        walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-x_offset, y_offset, -player_Z));
         walls[2 * i + 1]->SetActorRotation(FRotator(0.0f, -FMath::RadiansToDegrees(angle), 0.0f));
-        walls[2 * i + 1]->SetActorScale3D(FVector(1.0f, width / 100.0f, 1.0f));
-    }
-    //if walls_count is odd, place last wall in back of informant
+        walls[2 * i + 1]->SetWallWidth(width);
+    }   
+
     if (MaxWallsCount % 2 == 1)
     {
         int i = MaxWallsCount - 1;
-        walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0, -radius, -player_Z));
-        walls[i]->SetActorRotation(player_transform.GetRotation());
-        walls[i]->SetActorScale3D(FVector(1.0f, width / 100.0f, 1.0f));
+        walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0f, -radius / 2.0f, -player_Z));
+        walls[i]->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+        walls[i]->SetWallWidth(width);
     }
 
     //So strange algorithm for placing the walls is for sorting the walls by remoteness from stimulus.
     //Later you can just find first hidden wall(it will be nearest hidden wall to stimulus) and unhide it
 }
 
-// ---------------------- VR -------------------------
+void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
+{
+    for (auto aoi : stimulus->SelectedAOIs)
+        wall->AddAOI(aoi);
+    //clear selection on stimulus
+    stimulus->SelectedAOIs.Empty();
+    stimulus->UpdateContours();
+}
+
+// ---------------------- VR ------------------------
 
 void AReadingTrackerGameMode::CalibrateVR()
 {
@@ -209,50 +277,8 @@ void AReadingTrackerGameMode::initWS()
 
     ep.on_message = [this](std::shared_ptr<WSServer::Connection> connection, std::shared_ptr<WSServer::InMessage> msg)
     {
-        auto text = msg->string();
-        TSharedPtr<FJsonObject> jsonParsed;
-        TSharedRef<TJsonReader<TCHAR>> jsonReader = TJsonReaderFactory<TCHAR>::Create(text.c_str());
-        if (FJsonSerializer::Deserialize(jsonReader, jsonParsed))
-        {
-            if (jsonParsed->TryGetField("calibrate"))
-                CalibrateVR();
-            else if (jsonParsed->TryGetField("customCalibrate"))
-                stimulus->customCalibrate();
-            else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
-            {
-                auto PC = GetWorld()->GetFirstPlayerController();
-                bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
-                informant->ToggleMotionController(visibility);
-            }
-            else
-            {
-                FString image = jsonParsed->GetStringField("image");
-                TArray<uint8> img;
-                FString png = "data:image/png;base64,";
-                FString jpg = "data:image/jpeg;base64,";
-                EImageFormat fmt = EImageFormat::Invalid;
-                int startPos = 0;
-                if (image.StartsWith(png))
-                {
-                    fmt = EImageFormat::PNG;
-                    startPos = png.Len();
-                }
-                else if (image.StartsWith(jpg))
-                {
-                    fmt = EImageFormat::JPEG;
-                    startPos = jpg.Len();
-                }
-                if (fmt != EImageFormat::Invalid &&
-                    FBase64::Decode(&(image.GetCharArray()[startPos]), img))
-                {
-                    float sx = jsonParsed->GetNumberField("scaleX");
-                    float sy = jsonParsed->GetNumberField("scaleY");
-                    UTexture2D* texture = loadTexture2DFromBytes(img, fmt);
-                    if (texture)
-                        stimulus->updateDynTex(texture, sx , sy, jsonParsed->GetArrayField("AOIs"));
-                }
-            }
-        }
+        auto str = FString(UTF8_TO_TCHAR(msg->string().c_str()));
+        message_queue.Enqueue(str);
     };
 
     ep.on_open = [](std::shared_ptr<WSServer::Connection> connection)
@@ -275,11 +301,69 @@ void AReadingTrackerGameMode::initWS()
         UE_LOG(LogTemp, Warning, TEXT("WebSocket: Error"));
     };
 
-    m_serverThread.Reset(new std::thread(&AReadingTrackerGameMode::wsRun, this));
+    m_serverThread = MakeUnique<std::thread>(&AReadingTrackerGameMode::wsRun, this);
+}
+
+void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
+{
+    FString image_textdata = json->GetStringField("image");
+    TArray<uint8> img;
+    FString png = "data:image/png;base64,";
+    FString jpg = "data:image/jpeg;base64,";
+    EImageFormat fmt = EImageFormat::Invalid;
+    int startPos = 0;
+    if (image_textdata.StartsWith(png))
+    {
+        fmt = EImageFormat::PNG;
+        startPos = png.Len();
+    }
+    else if (image_textdata.StartsWith(jpg))
+    {
+        fmt = EImageFormat::JPEG;
+        startPos = jpg.Len();
+    }
+
+    if (fmt != EImageFormat::Invalid &&
+        FBase64::Decode(&(image_textdata.GetCharArray()[startPos]), img))
+    {
+        float sx = json->GetNumberField("scaleX");
+        float sy = json->GetNumberField("scaleY");
+        UTexture2D* texture = loadTexture2DFromBytes(img, fmt);
+        TArray<FAOI> AOIs;
+        for (auto aoi_text : json->GetArrayField("AOIs"))
+        {
+            FAOI aoi;
+            auto nameField = aoi_text->AsObject()->TryGetField("name");
+            if (nameField)
+                aoi.name = nameField->AsString();
+            auto pathField = aoi_text->AsObject()->TryGetField("path");
+            if (pathField)
+            {
+                auto path = pathField->AsArray();
+                for (auto point : path)
+                    aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
+            }
+            auto bboxField = aoi_text->AsObject()->TryGetField("bbox");
+            if (bboxField)
+            {
+                auto bbox = bboxField->AsArray();
+                aoi.bbox = FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
+                    FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber()));
+            }
+            auto size = aoi.bbox.GetSize();
+            auto start = aoi.bbox.Min;
+            aoi.image = UTexture2D::CreateTransient(size.X, size.Y);
+            aoi.image->AddToRoot();
+            CopyTexture2DFragment(aoi.image, texture, start.X, start.Y, size.X, size.Y);
+            AOIs.Add(aoi);
+        }
+        if (texture)
+            stimulus->updateDynTex(texture, sx, sy, AOIs);
+    }
 }
 
 void AReadingTrackerGameMode::Broadcast(FString& message)
 {
     for (auto& connection : m_server.get_connections())//broadcast to everyone
-        connection->send(TCHAR_TO_ANSI(*message));
+        connection->send(TCHAR_TO_UTF8(*message));
 }

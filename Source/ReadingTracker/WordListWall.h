@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ReadingTrackerGameMode.h"
 #include "WordListWall.generated.h"
+
+
 
 UCLASS()
 class READINGTRACKER_API AWordListWall : public AActor
@@ -12,9 +15,9 @@ class READINGTRACKER_API AWordListWall : public AActor
 	GENERATED_BODY()
 	
 public:	
+	//----------------- API ---------------------
 	// Sets default values for this actor's properties
 	AWordListWall();
-
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
@@ -22,9 +25,15 @@ public:
 	bool IsHiddenInGame() const;
 	UFUNCTION(BlueprintCallable)
 	void SetVisibility(bool is_visible);
+	UFUNCTION(BlueprintCallable)
 	void SetWallName(const FString& name);
+	UFUNCTION(BlueprintCallable)
+	void SetWallWidth(float width);
 
+	void AddAOI(const FAOI* aoi);
+	void ClearList();
 
+	// -------------------- Properties ----------------
 	UPROPERTY(Category = Wall, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	USceneComponent* DefaultSceneRoot;
 	UPROPERTY(Category = Wall, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
@@ -33,8 +42,17 @@ public:
 	class UWidgetComponent* ListHeader;
 	UPROPERTY(Category = UI, EditAnywhere, BlueprintReadonly)
 	class UWidgetComponent* List;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	TSubclassOf<UUserWidget> EntryWidgetClass;
+
+	//------------------ Private API ----------------------
 protected:
 	UFUNCTION()
 	void OnClicked_DeleteList();
+	UFUNCTION()
+	void OnClicked_AddEntry();
+	UFUNCTION()
+	void OnClicked_RemoveEntry(URichButton* clickedButton, const FVector2D& clickPos);
 	bool bHiddenInGame = false;
+	TMap<const URichButton*, UUserWidget*> entries;//for fast searching of entry
 };

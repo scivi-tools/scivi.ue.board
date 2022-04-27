@@ -17,6 +17,36 @@ THIRD_PARTY_INCLUDES_END
 #include "SRanipal_Eyes_Enums.h"
 #include "ReadingTrackerGameMode.generated.h"
 
+//Channel to check collision with 
+static const ECollisionChannel Stimulus_Channel = ECollisionChannel::ECC_GameTraceChannel1;
+
+USTRUCT()
+struct FAOI
+{
+	GENERATED_BODY()
+	FString name;
+	UPROPERTY()
+	TArray<FVector2D> path;
+	FBox2D bbox;
+	UPROPERTY()
+	UTexture2D* image;
+	inline bool IsPointInside(const FVector2D& pt) const
+	{
+		if (!bbox.IsInside(pt)) return false;
+		//check point in polygon
+		bool IsInPolygon = false;
+		int n = path.Num();
+		for (int i = 0, j = n - 1; i < n; j = i++)
+		{
+			if (((path[i].Y > pt.Y) != (path[j].Y > pt.Y)) &&
+				(pt.X < (path[j].X - path[i].X) * (pt.Y - path[i].Y) /
+					(path[j].Y - path[i].Y) + path[i].X))
+				IsInPolygon = !IsInPolygon;
+		}
+		return IsInPolygon;
+	}
+};
+
 /**
  * 
  */
@@ -25,14 +55,16 @@ class READINGTRACKER_API AReadingTrackerGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 public:
+	AReadingTrackerGameMode(const FObjectInitializer& ObjectInitializer);
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	int MaxWallsCount = 6;
+	int MaxWallsCount = 5;
 
 	UFUNCTION(BlueprintCallable)
-	AActor* RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FVector& hitPoint);
+	bool RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FHitResult& hitResult);
 
 	//----------------- Scene ----------------------
 public:
@@ -41,9 +73,10 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void CreateListOfWords();
 	UFUNCTION(BlueprintCallable)
-	void DeleteList(AWordListWall* const wall);
-	UFUNCTION(BlueprintCallable)
 	void ReplaceWalls(float stimulus_remoteness);
+	void AddAOIsToList(AWordListWall* const wall);
+	UFUNCTION(BlueprintCallable)
+	void DeleteList(AWordListWall* const wall);
 protected:
 	class AStimulus* stimulus;
 	class ABaseInformant* informant;
@@ -66,7 +99,8 @@ protected:
 	using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
 	void initWS();
 	void wsRun() { m_server.start(); }
+	void ParseNewImage(const TSharedPtr<FJsonObject>& json);
 	WSServer m_server;
-	TUniquePtr<std::thread> m_serverThread;//you can't use std::thread in UE4, because ue4 can't destroy it then gave is exiting
-	
+	TUniquePtr<std::thread> m_serverThread = nullptr;//you can't use std::thread in UE4, because ue4 can't destroy it then gave is exiting
+	TQueue<FString> message_queue;
 };

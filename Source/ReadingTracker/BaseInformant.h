@@ -34,17 +34,16 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	void OnTriggerPressed();
-	void OnTriggerReleased();
-	void CameraMove_LeftRight(float value);
-	void CameraMove_UpDown(float value);
-
-	void ToggleMotionController(bool visiblity);
-
+	UFUNCTION(BlueprintCallable)
+	void SetVisibility_MC_Right(bool visibility);
+	UFUNCTION(BlueprintCallable)
+	void SetVisibility_MC_Left(bool visibility);
 	void GetGaze(FGaze& gaze) const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	UCameraComponent* CameraComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	UArrowComponent* EyeTrackingArrow;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	UMotionControllerComponent* MC_Left;
@@ -60,5 +59,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	class UWidgetInteractionComponent* MC_Right_Interaction_Lazer;
 
-	
+protected:
+	UFUNCTION()
+	void OnRTriggerPressed();
+	UFUNCTION()
+	void OnRTriggerReleased();
+	UFUNCTION()
+	void CameraMove_LeftRight(float value);
+	UFUNCTION()
+	void CameraMove_UpDown(float value);
+	FVector old_MC_Left_Direction;
+	FVector old_MC_Right_Direction;
+	static const constexpr float MCNoActionTimeout = 10.0f;
+	float MC_Left_NoActionTime = 0.0f;
+	float MC_Right_NoActionTime = 0.0f;
 };
