@@ -1,174 +1,414 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Stimulus.h"
-
+#include "BaseInformant.h"
+#include "Components/WidgetComponent.h"
+#include "Components/Button.h"
+#include "Components/Image.h"
 #include "SRanipalEye_FunctionLibrary.h"
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
 #include "SRanipalEye_Core.h"
-#include "Engine.h"
-#include "Json.h"
 #include "IXRTrackingSystem.h"
+#include "Engine/CanvasRenderTarget2D.h"
 
+//custom calibration
+static const constexpr int TARGET_MAX_RADIUS = 15;
+static const constexpr int TARGET_MIN_RADIUS = 7;
+static const constexpr int POINTS_PER_ROW = 3;
+static const constexpr int ROWS_IN_PATTERN = 3;
+static const constexpr int SAMPLES_TO_START = 180;     // 2s
+static const constexpr int SAMPLES_TO_START_MOVE = 22; // 0.25s
+static const constexpr int SAMPLES_TO_DECREASE = 90;   // 1s
+static const constexpr int SAMPLES_TO_MOVE = 10;       // 110ms
+static const constexpr int SAMPLES_TO_REJECT = 45;
+static const constexpr float START_POSITION = 0.05f;
+static const constexpr float END_POSITION = 0.95f;
+static const constexpr float CENTER_POSTION = 0.5f;
+static const constexpr float OUTLIER_THRESHOLD = 3.0f;
+static const constexpr float MAX_DISTANCE = 1000.0f;
+static const constexpr float HIT_RADIUS = 1.0f;
+static const constexpr float EPSILON = 1.0e-5f;
+
+//math functions
+//lerp - use FMath::Lerp
+float map(float v, float fromMin, float fromMax, float toMin, float toMax)
+{
+    return toMin + (v - fromMin) / (fromMax - fromMin) * (toMax - toMin);
+};
+float theta(const FVector& gaze)
+{
+    return fabs(gaze.Y) < EPSILON && fabs(gaze.Z) < EPSILON ? NAN : atan2(gaze.Y, gaze.Z) + PI;
+};
+float radius2(const FVector& gaze)
+{
+    return gaze.Y * gaze.Y + gaze.Z * gaze.Z;
+};
+int signum(float a, float b)
+{
+    return FGenericPlatformMath::IsNaN(a) || FGenericPlatformMath::IsNaN(b) || fabs(a - b) < EPSILON ? 0 : a - b > 0.0f ? 1 : -1;
+};
+
+FVector2D posForIdx(int idx)
+{
+    /*if ((idx / POINTS_PER_ROW) % 2)
+        idx = (idx / POINTS_PER_ROW) * POINTS_PER_ROW + POINTS_PER_ROW - (idx % POINTS_PER_ROW) - 1;*/
+    return FVector2D((float)(idx % POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(POINTS_PER_ROW - 1) + START_POSITION,
+        (float)(idx / POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(ROWS_IN_PATTERN - 1) + START_POSITION);
+}
+
+//---------------------- API --------------------------
 
 AStimulus::AStimulus()
 {
-    PrimaryActorTick.bCanEverTick = true;
-    
-    mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-    RootComponent = mesh;
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("StaticMesh'/Engine/BasicShapes/Cube.Cube'"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WallMaterialAsset(TEXT("Material'/Game/StarterContent/Materials/M_Brick_Clay_New.M_Brick_Clay_New'"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> BoardMaterialAsset(TEXT("Material'/Game/Materials/BoardMat.BoardMat'"));
+    static ConstructorHelpers::FClassFinder<UUserWidget> CreateListWidgetClass(TEXT("/Game/UI/UI_CreateList_Menu"));
+    static ConstructorHelpers::FClassFinder<UUserWidget> CanvasWidgetClass(TEXT("/Game/UI/UI_Canvas"));
 
-    m_aspect = 1.0f;
-    m_scaleX = 1.0f;
-    m_scaleY = 1.0f;
-    m_dynTexW = 0;
-    m_dynTexH = 0;
-    m_needsUpdate = false;
+    base_material = BoardMaterialAsset.Object;
+
+    DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    RootComponent = DefaultSceneRoot;
+
+    wall = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Wall"));
+    wall->SetupAttachment(RootComponent);
+    wall->SetStaticMesh(CubeAsset.Object);
+    wall->SetMaterial(0, WallMaterialAsset.Object);
+    wall->SetRelativeScale3D(FVector(0.1f, 5.0f, 3.0f));
+    wall->SetRelativeLocation(FVector(0.0f, 0.0f, 150.0f));
+
+    Stimulus = CreateDefaultSubobject<UWidgetComponent>(TEXT("Canvas"));
+    Stimulus->SetupAttachment(RootComponent);
+    Stimulus->SetWidgetClass(CanvasWidgetClass.Class);
+    Stimulus->SetDrawSize(FVector2D(400.0f, 200.0f));
+    Stimulus->SetRelativeLocation(FVector(10.0f, 0.0f, 150.0f));
+    Stimulus->SetUsingAbsoluteScale(true);
+    Stimulus->SetCollisionResponseToChannel(Stimulus_Channel, ECollisionResponse::ECR_Block);
+
+    CreateListButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("CreateListButton"));
+    CreateListButton->SetupAttachment(RootComponent);
+    CreateListButton->SetWidgetClass(CreateListWidgetClass.Class);
+    CreateListButton->SetDrawSize(FVector2D(500.0f, 75.0f));
+    CreateListButton->SetUsingAbsoluteScale(true);
+    CreateListButton->SetRelativeLocation(FVector(10.0f, 0.0f, 340.0f));
+    CreateListButton->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
+    
     m_calibIndex = 0;
-    
-    m_stimulusW = 0;
-    m_stimulusH = 0;
-    m_activeAOI = -1;
-    m_inSelectionMode = false;
-    m_rReleased = false;
-    m_imgUpdated = false;
-
-    m_camera = nullptr;
-
     m_needsCustomCalib = false;
     m_customCalibSamples = 0;
-
-    m_mcRight = nullptr;
 }
 
 void AStimulus::BeginPlay()
 {
     Super::BeginPlay();
+    const int default_size = 100;
+    image = UTexture2D::CreateTransient(default_size, default_size);
+    //create textures for material
+    m_dynContour = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(GetWorld(), UCanvasRenderTarget2D::StaticClass(), default_size, default_size);
+    m_dynContour->ClearColor = FLinearColor(0, 0, 0, 0);
+    m_dynContour->OnCanvasRenderTargetUpdate.AddDynamic(this, &AStimulus::drawContour);
+    m_dynContour->UpdateResource();
+    //create dynamic material
+    m_dynMat = UMaterialInstanceDynamic::Create(base_material, Stimulus);
+    m_dynMat->SetTextureParameterValue(TEXT("ContourTex"), m_dynContour);
+    m_dynMat->SetTextureParameterValue(TEXT("DynTex"), (UTexture2D*)image);
+    //set material to the widget
+    Stimulus->SetDrawSize(FVector2D(default_size, default_size));
+    auto image_widget = Cast<UImage>(Stimulus->GetWidget()->GetWidgetFromName(TEXT("Stimulus")));
+    image_widget->SetBrushFromMaterial(m_dynMat);
+    m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
+    m_staticTransform = Stimulus->GetRelativeTransform();
+    
+    //set onClick event on createListButton
+    auto btn = Cast<UButton>(CreateListButton->GetWidget()->GetWidgetFromName(TEXT("btnCreateList")));
+    if (btn)
+        btn->OnClicked.AddDynamic(this, &AStimulus::OnClicked_CreateList);
+}
 
-    m_camera = UGameplayStatics::GetPlayerController(GetWorld(), 0)->PlayerCameraManager;
+void AStimulus::updateDynTex(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs)
+{
+    AOIs = newAOIs;
+    SelectedAOIs.Empty();
 
-    TArray<UMotionControllerComponent *> comps;
-    UGameplayStatics::GetPlayerPawn(GetWorld(), 0)->GetComponents(comps);
-    for (UMotionControllerComponent *motionController : comps)
+    SetActorScale3D(FVector(1.0f, sx, sy));
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    GM->ReplaceWalls(500.0f);
+    // set new image
+    image = texture;
+    auto image_size = FVector2D(image->GetSizeX(), image->GetSizeY());
+    auto wall_scale = wall->GetComponentScale();
+    auto wall_size = FVector2D(wall_scale.Y, wall_scale.Z) * 100;//one scale = 100 units
+    float factor = wall_size.X / image_size.X;
+    if (image_size.X < image_size.Y)
+        factor = wall_size.Y / image_size.Y;
+    FVector image_scale(1.0f, factor, factor);
+    Stimulus->SetDrawSize(image_size);
+    Stimulus->SetRelativeScale3D(image_scale);
+    m_dynMat->SetTextureParameterValue(TEXT("DynTex"), (UTexture*)image);
+    m_dynContour->ResizeTarget(image_size.X, image_size.Y);
+    m_dynContour->UpdateResource();//to clear contour
+
+    m_staticTransform = Stimulus->GetRelativeTransform();
+    m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
+    OnImageUpdated();    
+}
+
+void AStimulus::BindInformant(ABaseInformant* _informant)
+{
+    informant = _informant;
+}
+
+void AStimulus::UpdateContours()
+{
+    m_dynContour->UpdateResource();
+}
+
+void AStimulus::ClearSelectedAOIs()
+{
+    FGaze gaze;
+    informant->GetGaze(gaze);
+    FVector2D uv(-1000.0f, -1000.0f);
+    //check if gaze im stimulus => then calc uv
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    FHitResult hitPoint(ForceInit);
+    const float ray_radius = 1.0f;
+    const float ray_length = 1000.0f;
+    if (GM->RayTrace(informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
-        if (motionController->MotionSource == "Right")
+        if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
+            uv = sceneToBillboard(hitPoint.Location);
+    }
+    for (auto selected_aoi : SelectedAOIs) 
+    {
+        int aoi_index = selected_aoi - AOIs.GetData();
+        SendGazeToSciVi(gaze, uv, aoi_index, TEXT("SELECT"));//this unselect selected in sciVi
+    }
+    SelectedAOIs.Empty();
+    UpdateContours();
+}
+
+void AStimulus::OnInFocus(const FGaze& gaze, const FHitResult& hitPoint)
+{
+    if (hitPoint.Component == Stimulus)
+    {
+        FVector2D uv = sceneToBillboard(hitPoint.Location);
+        int currentAOIIndex = -1;
+        if (!informant->MC_Right->bHiddenInGame)
+            auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
+        SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
+    }
+}
+
+void AStimulus::OnTriggerPressed(const FHitResult& hitPoint)
+{
+    if (hitPoint.Component == Stimulus)
+    {
+        if (!informant->MC_Right->bHiddenInGame)
         {
-            m_mcRight = motionController;
-            break;
+            m_laser = sceneToBillboard(hitPoint.Location);
+            UpdateContours();
         }
     }
-    m_mcRight->SetHiddenInGame(true, true);
+}
 
-    SRanipalEye_Framework::Instance()->StartFramework(EyeVersion);
-
-    initWS();
-
-    m_dynTex = mesh->CreateAndSetMaterialInstanceDynamic(0);
-    m_dynContour = nullptr;
-
-    /*for (TActorIterator<AStaticMeshActor> Itr(GetWorld()); Itr; ++Itr)
+void AStimulus::OnTriggerReleased(const FHitResult& hitPoint)
+{
+    if (hitPoint.Component == Stimulus)
     {
-        if (Itr->GetName() == "Sphere_2")
+#ifdef COLLECCT_ANGULAR_ERROR
+#ifdef MEASURE_ANGULAR_SIZES
+        static FQuat prevQ;
+        static bool measure = false;
+        FQuat q = informant->CameraComponent->GetComponentRotation().Quaternion();
+        if (measure)
         {
-            m_pointer = *Itr;
-            break;
+            FString s = FString::Printf(TEXT(">>>>>>> %f"), prevQ.AngularDistance(q));
+            UE_LOG(LogTemp, Warning, TEXT("%s"), *s);
+            GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, s);
         }
-    }*/
-}
-
-void AStimulus::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-    Super::EndPlay(EndPlayReason);
-
-    SRanipalEye_Framework::Instance()->StopFramework();
-
-    m_server.stop();
-    m_serverThread.join();
-}
-
-void AStimulus::initWS()
-{
-    m_server.config.port = 81;
-
-    auto &ep = m_server.endpoint["^/ue4/?$"];
-
-    ep.on_message = [this](shared_ptr<WSServer::Connection> connection, shared_ptr<WSServer::InMessage> msg)
-    {
-        auto text = msg->string();
-        TSharedPtr<FJsonObject> jsonParsed;
-        TSharedRef<TJsonReader<TCHAR>> jsonReader = TJsonReaderFactory<TCHAR>::Create(text.c_str());
-        if (FJsonSerializer::Deserialize(jsonReader, jsonParsed))
+        else
         {
-            if (jsonParsed->TryGetField("calibrate"))
-                calibrate();
-            else if (jsonParsed->TryGetField("customCalibrate"))
-                customCalibrate();
-            else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
-                toggleMotionController(jsonParsed->GetBoolField("setMotionControllerVisibility"));
-            else
+            prevQ = q;
+        }
+        measure = !measure;
+#endif // MEASURE_ANGULAR_SIZES
+        static int kk = 0;
+        const int kn = 5;
+        FVector rgt = billboardToScene(FVector2D((kk % kn) * 0.9f / (kn - 1) + 0.05f, (kk / kn) * 0.9f / (kn - 1) + 0.05f));
+        FVector rg = rgt - gazeOrigin;
+        rg.Normalize();
+        FVector g = correctedGazeTarget - gazeOrigin;
+        g.Normalize();
+        leftPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
+        g = rawGazeTarget - gazeOrigin;
+        g.Normalize();
+        rightPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
+        gazeOrigin.X = m_rawTarget.X;
+        gazeOrigin.Y = m_rawTarget.Y;
+        ++kk;
+        if (kk == kn * kn)
+            kk = 0;
+#endif // COLLECCT_ANGULAR_ERROR
+        FGaze gaze;
+        informant->GetGaze(gaze);
+        m_laser = sceneToBillboard(hitPoint.Location);
+        int currentAOIIndex = -1;
+        if (!informant->MC_Right->bHiddenInGame)
+        {
+            auto selectedAOI = findAOI(FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), currentAOIIndex);
+            if (selectedAOI)
             {
-                FString image = jsonParsed->GetStringField("image");
-                TArray<uint8> img;
-                FString png = "data:image/png;base64,";
-                FString jpg = "data:image/jpeg;base64,";
-                EImageFormat fmt = EImageFormat::Invalid;
-                int startPos = 0;
-                if (image.StartsWith(png))
-                {
-                    fmt = EImageFormat::PNG;
-                    startPos = png.Len();
-                }
-                else if (image.StartsWith(jpg))
-                {
-                    fmt = EImageFormat::JPEG;
-                    startPos = jpg.Len();
-                }
-                if (fmt != EImageFormat::Invalid && FBase64::Decode(&(image.GetCharArray()[startPos]), img))
-                    this->updateDynTex(img, fmt, jsonParsed->GetNumberField("scaleX"), jsonParsed->GetNumberField("scaleY"), jsonParsed->GetArrayField("AOIs"));
+                toggleSelectedAOI(selectedAOI);
+                SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
             }
         }
-    };
-
-    ep.on_open = [](shared_ptr<WSServer::Connection> connection)
-    {
-        UE_LOG(LogTemp, Display, TEXT("WebSocket: Opened"));
-    };
-
-    ep.on_close = [](shared_ptr<WSServer::Connection> connection, int status, const string &)
-    {
-        UE_LOG(LogTemp, Display, TEXT("WebSocket: Closed"));
-    };
-
-    ep.on_handshake = [](shared_ptr<WSServer::Connection>, SimpleWeb::CaseInsensitiveMultimap &)
-    {
-        return SimpleWeb::StatusCode::information_switching_protocols;
-    };
-
-    ep.on_error = [](shared_ptr<WSServer::Connection> connection, const SimpleWeb::error_code &ec)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("WebSocket: Error"));
-    };
-
-    m_serverThread = thread(&AStimulus::wsRun, this);
+        UpdateContours();
+        SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
+    }
 }
 
-void AStimulus::wsRun()
+void AStimulus::OnImageUpdated()
 {
-    m_server.start();
+    FGaze gaze;
+    informant->GetGaze(gaze);
+
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    FHitResult hitPoint(ForceInit);
+    const float ray_radius = 1.0f;
+    const float ray_length = 1000.0f;
+    if (GM->RayTrace(informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
+    {
+        if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
+        {
+            FVector2D uv = sceneToBillboard(hitPoint.Location);
+            int currentAOIIndex = -1;
+            if (!informant->MC_Right->bHiddenInGame)
+                auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
+            SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("IMG_UP"));
+        }
+    }
 }
 
-FVector AStimulus::billboardToScene(const FVector2D &pos) const
+void AStimulus::customCalibrate()
 {
-    return GetTransform().TransformPosition(FVector(m_staticExtent.X * (2.0f * pos.X - 1.0f),
-                                                    m_staticExtent.Y * (2.0f * pos.Y - 1.0f),
-                                                    0.0f));
+    m_needsCustomCalib = true;
 }
 
-FVector2D AStimulus::sceneToBillboard(const FVector &pos) const
+//----------------------- Draw functions --------------------
+
+void AStimulus::toggleSelectedAOI(const FAOI* aoi)
 {
-    FVector local = GetTransform().InverseTransformPosition(pos);
-    return FVector2D((local.X / m_staticExtent.X + 1.0f) / 2.0f, (local.Y / m_staticExtent.Y + 1.0f) / 2.0f);
+    if (SelectedAOIs.Contains(aoi))
+        SelectedAOIs.Remove(aoi);
+    else
+        SelectedAOIs.Add(aoi);
 }
+
+void AStimulus::strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, float thickness, const FLinearColor& color) const
+{
+    const int n = 8;
+    for (int i = 0; i < n; ++i)
+    {
+        cvs->K2_DrawLine(FVector2D(pos.X + radius * cos((float)i / (float)(n - 1) * 2.0f * PI),
+            pos.Y + radius * sin((float)i / (float)(n - 1) * 2.0f * PI)),
+            FVector2D(pos.X + radius * cos((float)(i + 1) / (float)(n - 1) * 2.0f * PI),
+                pos.Y + radius * sin((float)(i + 1) / (float)(n - 1) * 2.0f * PI)),
+            thickness, color);
+    }
+}
+
+void AStimulus::fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, const FLinearColor& color) const
+{
+    cvs->K2_DrawPolygon(nullptr, pos, FVector2D(radius), 16, color);
+}
+
+void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const FAOI* aoi) const
+{
+    FVector2D pt = aoi->path[0];
+    for (int i = 1, n = aoi->path.Num(); i < n; ++i)
+    {
+        cvs->K2_DrawLine(pt, aoi->path[i], th, color);
+        pt = aoi->path[i];
+    }
+    cvs->K2_DrawLine(pt, aoi->path[0], th, color);
+}
+
+void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
+{
+#ifdef EYE_DEBUG
+    float th = FMath::Max(round((float)FMath::Max(image->GetSizeX(), image->GetSizeY()) * 0.0025f), 1.0f);
+    strokeCircle(cvs, FVector2D(m_rawTarget.X * image->GetSizeX(), m_rawTarget.Y * image->GetSizeY()), 2.0f * th, th, FLinearColor(1, 0, 0, 1));
+    strokeCircle(cvs, FVector2D(m_corrTarget.X * image->GetSizeX(), m_corrTarget.Y * image->GetSizeY()), 2.0f * th, th, FLinearColor(0, 1, 0, 1));
+    strokeCircle(cvs, FVector2D(m_camTarget.X * image->GetSizeX(), m_camTarget.Y * image->GetSizeY()), 2.0f * th, th, FLinearColor(1, 0, 1, 1));
+#else
+    float th = FMath::Max(FMath::RoundToFloat((float)FMath::Max(image->GetSizeX(), image->GetSizeY()) * 0.0025f), 1.0f);
+    for (auto aoi : SelectedAOIs)
+        drawContourOfAOI(cvs, FLinearColor(0, 0.2, 0, 1), th, aoi);
+#endif // EYE_DEBUG
+
+    if (informant && !informant->MC_Right->bHiddenInGame)
+        fillCircle(cvs, FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), 10, FLinearColor(1, 0, 0, 1));
+
+    if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
+        fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * image->GetSizeX(), m_customCalibTarget.location.Y * image->GetSizeY()), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
+}
+
+void AStimulus::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id)
+{
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    //Send message to scivi
+    auto json = FString::Printf(TEXT("\"Gaze\": {\"uv\": [%f, %f]," 
+                                    "\"origin\": [%f, %f, %f],"
+                                    "\"direction\": [%F, %F, %F],"
+                                    "\"lpdmm\": %F, \"rpdmm\": %F,"
+                                    "\"cf\": %F, \"AOI_index\": %i,"
+                                    "\"Action\": \"%s\"}"),
+        uv.X, uv.Y,
+        gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
+        gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
+        gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, Id);
+    GM->Broadcast(json);
+}
+
+void AStimulus::OnClicked_CreateList()
+{
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    GM->SetRecordingMenuVisibility(true);
+}
+
+//used only in calibration
+FVector AStimulus::billboardToScene(const FVector2D& pos) const
+{
+    auto draw_size = Stimulus->GetDrawSize();
+    FVector local = FVector(-(pos.X - 0.5f) * draw_size.X,
+                            -(pos.Y - 0.5f)* draw_size.Y, 
+                            0.0f);
+    return Stimulus->GetComponentTransform().TransformPosition(local);
+}
+
+FVector2D AStimulus::sceneToBillboard(const FVector& pos) const
+{
+    auto draw_size = Stimulus->GetDrawSize();
+    FVector local = Stimulus->GetComponentTransform().InverseTransformPosition(pos);
+    return FVector2D(-local.Y / draw_size.X + 0.5f, -local.Z / draw_size.Y + 0.5f);
+}
+
+//------------------------ Collision detection -----------------------
+FAOI* AStimulus::findAOI(const FVector2D& pt, int& out_index) const
+{
+    out_index = -1;
+    for(int i = 0; i < AOIs.Num(); ++i)
+        if (AOIs[i].IsPointInside(pt))
+        {
+            out_index = i;
+            return (FAOI*)(AOIs.GetData() + i);
+        }
+    return nullptr;
+}
+
+//------------------------ Custom Calibration ------------------------
 
 bool AStimulus::positiveOctant(const FVector gaze, const CalibPoint p1, const CalibPoint &p2, const CalibPoint &p3,
                                float &w1, float &w2, float &w3) const
@@ -264,43 +504,8 @@ bool AStimulus::findBasis(const FVector &gaze, CalibPoint &cp1, CalibPoint &cp2,
     return true;
 }
 
-bool AStimulus::castRay(const FVector &origin, const FVector &ray, FVector &hitPoint) const
-{
-    FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, m_camera);
-    traceParam.bTraceComplex = true;
-    traceParam.bReturnPhysicalMaterial = false;
-    FHitResult hitResult(ForceInit);
-    bool result;
-
-    if (HIT_RADIUS == 0.0f)
-    {
-        result = m_camera->GetWorld()->LineTraceSingleByChannel(hitResult, origin, ray,
-                                                                    ECollisionChannel::ECC_WorldStatic, traceParam);
-    }
-    else
-    {
-        FCollisionShape sph = FCollisionShape();
-        sph.SetSphere(HIT_RADIUS);
-        result = m_camera->GetWorld()->SweepSingleByChannel(hitResult, origin, ray, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
-                                                            ECollisionChannel::ECC_WorldStatic, sph, traceParam);
-    }
-
-    if (result)
-        hitPoint = hitResult.Location;
-
-    return result;
-}
-
-FVector2D AStimulus::posForIdx(int idx) const
-{
-    /*if ((idx / POINTS_PER_ROW) % 2)
-        idx = (idx / POINTS_PER_ROW) * POINTS_PER_ROW + POINTS_PER_ROW - (idx % POINTS_PER_ROW) - 1;*/
-    return FVector2D((float)(idx % POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(POINTS_PER_ROW - 1) + START_POSITION,
-                     (float)(idx / POINTS_PER_ROW) * (END_POSITION - START_POSITION) / (float)(ROWS_IN_PATTERN - 1) + START_POSITION);
-}
-
-void AStimulus::applyCustomCalib(const FVector &gazeOrigin, const FVector &gazeTarget, const FVector &gaze,
-                                 FVector &correctedGazeTarget, bool &needsUpdateDynContour, float &cf)
+void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeTarget, const FVector& gaze,
+    FVector& correctedGazeTarget, bool& needsUpdateDynContour, float& cf)
 {
     if (m_needsCustomCalib)
     {
@@ -313,47 +518,120 @@ void AStimulus::applyCustomCalib(const FVector &gazeOrigin, const FVector &gazeT
     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
     {
         const float CALIB_DISTANCE = 450.0f;
-        FVector camLocation = m_camera->GetCameraLocation();
-        FRotator camRotation = m_camera->GetCameraRotation();
+        FVector camLocation = informant->CameraComponent->GetComponentLocation();
+        FRotator camRotation = informant->CameraComponent->GetComponentRotation();
         SetActorLocation(camRotation.RotateVector(FVector::ForwardVector) * CALIB_DISTANCE + camLocation);
-        SetActorRotation(camRotation.Quaternion() * FQuat(FVector(0.0f, 0.0f, -1.0f), PI / 2.0f) * m_staticTransform.GetRotation());
+        SetActorRotation(camRotation.Quaternion() * 
+                        FQuat(FVector(0.0f, 0.0f, -1.0f), PI / 2.0f) * 
+                        GetTransform().GetRotation());
     }
 
     cf = -1.0f;
 
     switch (m_customCalibPhase)
     {
-        case CalibPhase::None:
-        {
-            correctedGazeTarget = gazeTarget;
-            needsUpdateDynContour = false;
-            break;
-        }
+    case CalibPhase::None:
+    {
+        correctedGazeTarget = gazeTarget;
+        needsUpdateDynContour = false;
+        break;
+    }
 
-        case CalibPhase::StartDecreases:
+    case CalibPhase::StartDecreases:
+    {
+        correctedGazeTarget = gazeTarget;
+        needsUpdateDynContour = true;
+        m_customCalibTarget.location = FVector2D(CENTER_POSTION, CENTER_POSTION);
+        m_customCalibTarget.radius = map(m_customCalibSamples, 0, SAMPLES_TO_START, TARGET_MAX_RADIUS, TARGET_MIN_RADIUS);
+        ++m_customCalibSamples;
+        if (m_customCalibSamples == SAMPLES_TO_START)
         {
-            correctedGazeTarget = gazeTarget;
-            needsUpdateDynContour = true;
-            m_customCalibTarget.location = FVector2D(CENTER_POSTION, CENTER_POSTION);
-            m_customCalibTarget.radius = map(m_customCalibSamples, 0, SAMPLES_TO_START, TARGET_MAX_RADIUS, TARGET_MIN_RADIUS);
-            ++m_customCalibSamples;
-            if (m_customCalibSamples == SAMPLES_TO_START)
+            m_customCalibSamples = 0;
+            m_customCalibPhase = CalibPhase::StartMoves;
+        }
+        break;
+    }
+
+    case CalibPhase::StartMoves:
+    {
+        correctedGazeTarget = gazeTarget;
+        needsUpdateDynContour = true;
+        float pos = map(m_customCalibSamples, 0, SAMPLES_TO_START_MOVE, CENTER_POSTION, START_POSITION);
+        ++m_customCalibSamples;
+        if (m_customCalibSamples == SAMPLES_TO_START_MOVE)
+        {
+            m_customCalibTarget.location = FVector2D(START_POSITION, START_POSITION);
+            m_customCalibSamples = 0;
+            m_customCalibAccumReportedGaze = FVector(0.0f);
+            m_customCalibAccumRealGaze = FVector(0.0f);
+            m_customCalibAccumInternalGaze = FVector(0.0f);
+            m_customCalibPhase = CalibPhase::TargetDecreases;
+        }
+        else
+        {
+            m_customCalibTarget.location = FVector2D(pos, pos);
+        }
+        break;
+    }
+
+    case CalibPhase::TargetDecreases:
+    {
+        correctedGazeTarget = gazeTarget;
+        needsUpdateDynContour = true;
+        m_customCalibTarget.radius = map(m_customCalibSamples, 0, SAMPLES_TO_DECREASE, TARGET_MAX_RADIUS, TARGET_MIN_RADIUS);
+        FVector reportedGaze = gazeTarget - gazeOrigin;
+        reportedGaze.Normalize();
+        FVector realGaze = billboardToScene(m_customCalibTarget.location) - gazeOrigin;
+        realGaze.Normalize();
+        if (FMath::RadiansToDegrees(acosf(FVector::DotProduct(reportedGaze, realGaze))) < OUTLIER_THRESHOLD)
+        {
+            if (m_customCalibSamples > SAMPLES_TO_REJECT)
             {
-                m_customCalibSamples = 0;
-                m_customCalibPhase = CalibPhase::StartMoves;
+                m_customCalibAccumReportedGaze += reportedGaze;
+                m_customCalibAccumReportedGaze.Normalize();
+                m_customCalibAccumRealGaze += realGaze;
+                m_customCalibAccumRealGaze.Normalize();
+                m_customCalibAccumInternalGaze += gaze;
+                m_customCalibAccumInternalGaze.Normalize();
             }
-            break;
-        }
-
-        case CalibPhase::StartMoves:
-        {
-            correctedGazeTarget = gazeTarget;
-            needsUpdateDynContour = true;
-            float pos = map(m_customCalibSamples, 0, SAMPLES_TO_START_MOVE, CENTER_POSTION, START_POSITION);
             ++m_customCalibSamples;
-            if (m_customCalibSamples == SAMPLES_TO_START_MOVE)
+        }
+        else
+        {
+            m_customCalibSamples = 0;
+            m_customCalibAccumReportedGaze = FVector(0.0f);
+            m_customCalibAccumRealGaze = FVector(0.0f);
+            m_customCalibAccumInternalGaze = FVector(0.0f);
+        }
+        if (m_customCalibSamples == SAMPLES_TO_DECREASE)
+        {
+            CalibPoint cp;
+            cp.gaze = m_customCalibAccumInternalGaze;
+            cp.qCorr = FQuat::FindBetween(m_customCalibAccumReportedGaze, m_customCalibAccumRealGaze);
+            m_customCalibPoints.Add(cp);
+            m_customCalibSamples = 0;
+            m_customCalibPhase = CalibPhase::TargetMoves;
+        }
+        break;
+    }
+
+    case CalibPhase::TargetMoves:
+    {
+        correctedGazeTarget = gazeTarget;
+        needsUpdateDynContour = true;
+        int idx = m_customCalibPoints.Num();
+        if (idx == POINTS_PER_ROW * ROWS_IN_PATTERN)
+        {
+            m_customCalibPhase = CalibPhase::Done;
+            SetActorTransform(m_staticTransform);
+        }
+        else
+        {
+            FVector2D posTo = posForIdx(idx);
+            ++m_customCalibSamples;
+            if (m_customCalibSamples == SAMPLES_TO_MOVE)
             {
-                m_customCalibTarget.location = FVector2D(START_POSITION, START_POSITION);
+                m_customCalibTarget.location = posTo;
                 m_customCalibSamples = 0;
                 m_customCalibAccumReportedGaze = FVector(0.0f);
                 m_customCalibAccumRealGaze = FVector(0.0f);
@@ -362,105 +640,33 @@ void AStimulus::applyCustomCalib(const FVector &gazeOrigin, const FVector &gazeT
             }
             else
             {
-                m_customCalibTarget.location = FVector2D(pos, pos);
+                FVector2D posFrom = posForIdx(idx - 1);
+                m_customCalibTarget.location = FVector2D(map(m_customCalibSamples, 0, SAMPLES_TO_MOVE, posFrom.X, posTo.X),
+                    map(m_customCalibSamples, 0, SAMPLES_TO_MOVE, posFrom.Y, posTo.Y));
             }
-            break;
         }
+        break;
+    }
 
-        case CalibPhase::TargetDecreases:
+    case CalibPhase::Done:
+    {
+        auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+        CalibPoint cp1, cp2, cp3;
+        float w1, w2, w3;
+        if (findBasis(gaze, cp1, cp2, cp3, w1, w2, w3))
         {
-            correctedGazeTarget = gazeTarget;
-            needsUpdateDynContour = true;
-            m_customCalibTarget.radius = map(m_customCalibSamples, 0, SAMPLES_TO_DECREASE, TARGET_MAX_RADIUS, TARGET_MIN_RADIUS);
-            FVector reportedGaze = gazeTarget - gazeOrigin;
-            reportedGaze.Normalize();
-            FVector realGaze = billboardToScene(m_customCalibTarget.location) - gazeOrigin;
-            realGaze.Normalize();
-            if (FMath::RadiansToDegrees(acosf(FVector::DotProduct(reportedGaze, realGaze))) < OUTLIER_THRESHOLD)
+            FQuat corr = cp1.qCorr * w1 + cp2.qCorr * w2 + cp3.qCorr * w3;
+            corr.Normalize();
+            cf = corr.W;
+            FVector reportedGazeOrigin, reportedGazeDirection;
+            if (USRanipalEye_FunctionLibrary::GetGazeRay(GazeIndex::COMBINE, reportedGazeOrigin, reportedGazeDirection))
             {
-                if (m_customCalibSamples > SAMPLES_TO_REJECT)
-                {
-                    m_customCalibAccumReportedGaze += reportedGaze;
-                    m_customCalibAccumReportedGaze.Normalize();
-                    m_customCalibAccumRealGaze += realGaze;
-                    m_customCalibAccumRealGaze.Normalize();
-                    m_customCalibAccumInternalGaze += gaze;
-                    m_customCalibAccumInternalGaze.Normalize();
-                }
-                ++m_customCalibSamples;
-            }
-            else
-            {
-                m_customCalibSamples = 0;
-                m_customCalibAccumReportedGaze = FVector(0.0f);
-                m_customCalibAccumRealGaze = FVector(0.0f);
-                m_customCalibAccumInternalGaze = FVector(0.0f);
-            }
-            if (m_customCalibSamples == SAMPLES_TO_DECREASE)
-            {
-                CalibPoint cp;
-                cp.gaze = m_customCalibAccumInternalGaze;
-                cp.qCorr = FQuat::FindBetween(m_customCalibAccumReportedGaze, m_customCalibAccumRealGaze);
-                m_customCalibPoints.Add(cp);
-                m_customCalibSamples = 0;
-                m_customCalibPhase = CalibPhase::TargetMoves;
-            }
-            break;
-        }
-
-        case CalibPhase::TargetMoves:
-        {
-            correctedGazeTarget = gazeTarget;
-            needsUpdateDynContour = true;
-            int idx = m_customCalibPoints.Num();
-            if (idx == POINTS_PER_ROW * ROWS_IN_PATTERN)
-            {
-                m_customCalibPhase = CalibPhase::Done;
-                SetActorTransform(m_staticTransform);
-            }
-            else
-            {
-                FVector2D posTo = posForIdx(idx);
-                ++m_customCalibSamples;
-                if (m_customCalibSamples == SAMPLES_TO_MOVE)
-                {
-                    m_customCalibTarget.location = posTo;
-                    m_customCalibSamples = 0;
-                    m_customCalibAccumReportedGaze = FVector(0.0f);
-                    m_customCalibAccumRealGaze = FVector(0.0f);
-                    m_customCalibAccumInternalGaze = FVector(0.0f);
-                    m_customCalibPhase = CalibPhase::TargetDecreases;
-                }
-                else
-                {
-                    FVector2D posFrom = posForIdx(idx - 1);
-                    m_customCalibTarget.location = FVector2D(map(m_customCalibSamples, 0, SAMPLES_TO_MOVE, posFrom.X, posTo.X),
-                                                             map(m_customCalibSamples, 0, SAMPLES_TO_MOVE, posFrom.Y, posTo.Y));
-                }
-            }
-            break;
-        }
-
-        case CalibPhase::Done:
-        {
-            CalibPoint cp1, cp2, cp3;
-            float w1, w2, w3;
-            if (findBasis(gaze, cp1, cp2, cp3, w1, w2, w3))
-            {
-                FQuat corr = cp1.qCorr * w1 + cp2.qCorr * w2 + cp3.qCorr * w3;
-                corr.Normalize();
-                cf = corr.W;
-                FVector reportedGazeOrigin, reportedGazeDirection;
-                if (USRanipalEye_FunctionLibrary::GetGazeRay(GazeIndex::COMBINE, reportedGazeOrigin, reportedGazeDirection))
-                {
-                    FVector camLocation = m_camera->GetCameraLocation();
-                    FRotator camRotation = m_camera->GetCameraRotation();
-                    FVector gazeRay = (corr.RotateVector(camRotation.RotateVector(reportedGazeDirection)) * MAX_DISTANCE) + camLocation;
-                    if (!castRay(camLocation, gazeRay, correctedGazeTarget))
-                        correctedGazeTarget = gazeTarget;
-                }
-                else
-                {
+                FVector camLocation = informant->CameraComponent->GetComponentLocation();
+                FRotator camRotation = informant->CameraComponent->GetComponentRotation();
+                FVector gazeRay = (corr.RotateVector(camRotation.RotateVector(reportedGazeDirection)) * MAX_DISTANCE) + camLocation;
+                FHitResult hitPoint;
+                if (!GM->RayTrace(informant, camLocation, gazeRay, hitPoint)) {
+                    correctedGazeTarget = hitPoint.Location;
                     correctedGazeTarget = gazeTarget;
                 }
             }
@@ -468,402 +674,40 @@ void AStimulus::applyCustomCalib(const FVector &gazeOrigin, const FVector &gazeT
             {
                 correctedGazeTarget = gazeTarget;
             }
-            needsUpdateDynContour = false;
-            break;
         }
-    }
-}
-
-bool AStimulus::focus(FVector &gazeOrigin, FVector &rawGazeTarget, FVector &correctedGazeTarget,
-                      float &leftPupilDiam, float &rightPupilDiam, bool &needsUpdateDynContour, float &cf)
-{
-    FFocusInfo focusInfo;
-    FVector gazeTarget;
-    bool hit = USRanipalEye_FunctionLibrary::Focus(GazeIndex::COMBINE, 1000.0f, 1.0f, m_camera, ECollisionChannel::ECC_WorldStatic, focusInfo, gazeOrigin, gazeTarget);
-    if (hit && focusInfo.actor == this)
-    {
-        ViveSR::anipal::Eye::VerboseData vd;
-        SRanipalEye_Core::Instance()->GetVerboseData(vd);
-
-        rawGazeTarget = focusInfo.point;
-        leftPupilDiam = vd.left.pupil_diameter_mm;
-        rightPupilDiam = vd.right.pupil_diameter_mm;
-
-        FVector gaze = (vd.right.gaze_direction_normalized + vd.left.gaze_direction_normalized) / 2.0f; // Needs conversion to UE coordinates: X,Y,Z -> Z,-X,Y
-        gaze.Normalize();
-        applyCustomCalib(gazeOrigin, rawGazeTarget, FVector(gaze.Z, gaze.X * -1.0f, gaze.Y), correctedGazeTarget, needsUpdateDynContour, cf);
-
-        return true;
-    }
-    return false;
-}
-
-void AStimulus::Tick(float DeltaTime)
-{
-    Super::Tick(DeltaTime);
-
-    FVector gazeOrigin, rawGazeTarget, correctedGazeTarget;
-    float leftPupilDiam, rightPupilDiam;
-    float cf;
-    bool needsUpdateDynContour;
-    bool hit = focus(gazeOrigin, rawGazeTarget, correctedGazeTarget, leftPupilDiam, rightPupilDiam, needsUpdateDynContour, cf);
-    if (hit)
-    {
-        FVector2D uv = sceneToBillboard(correctedGazeTarget);
-
-        bool selected = false;
-
-#ifdef EYE_DEBUG
-        m_corrTarget = uv;
-        m_rawTarget = sceneToBillboard(rawGazeTarget);
-        FVector camHitPoint;
-        FVector camLocation = m_camera->GetCameraLocation();
-        FRotator camRotation = m_camera->GetCameraRotation();
-        FVector gazeRay = camRotation.RotateVector(FVector::ForwardVector) * MAX_DISTANCE + camLocation;
-        castRay(camLocation, gazeRay, camHitPoint);
-        m_camTarget = sceneToBillboard(camHitPoint);
-        
-        int currentAOI = -1;
-        needsUpdateDynContour = true;
-#else
-        int currentAOI = findActiveAOI(FVector2D(uv.X * m_stimulusW, uv.Y * m_stimulusH));
-        if (!m_mcRight->bHiddenInGame)
+        else
         {
-            FVector p;
-            bool hr = castRay(m_mcRight->GetComponentLocation(), m_mcRight->GetComponentLocation() + m_mcRight->GetForwardVector() * 1000.0f, p);
-            if (hr)
-            {
-                m_laser = sceneToBillboard(p);
-                needsUpdateDynContour = true;
-                if (m_rReleased)
-                {
-                    int selAOI = findActiveAOI(FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH));
-                    if (selAOI != -1)
-                    {
-                        toggleSelectedAOI(selAOI);
-                        currentAOI = selAOI;
-                        selected = true;
-                    }
-                }
-            }
+            correctedGazeTarget = gazeTarget;
         }
-        /*int newAOI = m_inSelectionMode ? currentAOI : -1;
-        if (m_activeAOI != newAOI && m_dynContour)
-        {
-            if (newAOI == -1 && !m_inSelectionMode)
-            {
-                selected = true;
-                toggleSelectedAOI(m_activeAOI);
-            }
-            m_activeAOI = newAOI;
-            needsUpdateDynContour = true;
-        }*/
-#endif // EYE_DEBUG
-
-        if (m_dynContour && needsUpdateDynContour)
-            m_dynContour->UpdateResource();
-
-#ifdef COLLECCT_ANGULAR_ERROR
-        if (m_rReleased)
-        {
-#ifdef MEASURE_ANGULAR_SIZES
-            static FQuat prevQ;
-            static bool measure = false;
-            FQuat q = m_camera->GetCameraRotation().Quaternion();
-            if (measure)
-            {
-                FString s = FString::Printf(TEXT(">>>>>>> %f"), prevQ.AngularDistance(q));
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *s);
-                GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, s);
-            }
-            else
-            {
-                prevQ = q;
-            }
-            measure = !measure;
-#endif // MEASURE_ANGULAR_SIZES
-            static int kk = 0;
-            const int kn = 5;
-            FVector rgt = billboardToScene(FVector2D((kk % kn) * 0.9f / (kn - 1) + 0.05f, (kk / kn) * 0.9f / (kn - 1) + 0.05f));
-            FVector rg = rgt - gazeOrigin;
-            rg.Normalize();
-            FVector g = correctedGazeTarget - gazeOrigin;
-            g.Normalize();
-            leftPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
-            g = rawGazeTarget - gazeOrigin;
-            g.Normalize();
-            rightPupilDiam = FMath::RadiansToDegrees(acosf(FVector::DotProduct(g, rg)));
-            gazeOrigin.X = m_rawTarget.X;
-            gazeOrigin.Y = m_rawTarget.Y;
-            ++kk;
-            if (kk == kn * kn)
-                kk = 0;
-        }
-#endif // COLLECCT_ANGULAR_ERROR
-
-        FDateTime t = FDateTime::Now();
-        string msg = to_string(t.ToUnixTimestamp() * 1000 + t.GetMillisecond()) + " " +
-                     to_string(uv.X) + " " + to_string(uv.Y) + " " +
-                     to_string(gazeOrigin.X) + " " + to_string(gazeOrigin.Y) + " " + to_string(gazeOrigin.Z) + " " +
-                     to_string(correctedGazeTarget.X) + " " + to_string(correctedGazeTarget.Y) + " " + to_string(correctedGazeTarget.Z) + " " +
-                     to_string(leftPupilDiam) + " " + to_string(rightPupilDiam) + " " + to_string(cf) + " " +
-                     to_string(currentAOI);
-        string msgToSend = msg + (selected ? " SELECT" : " LOOKAT");
-        for (auto &connection : m_server.get_connections())
-            connection->send(msgToSend);
-        if (m_rReleased)
-        {
-            msgToSend = msg + " R_RELD";
-            m_rReleased = false;
-            for (auto &connection : m_server.get_connections())
-                connection->send(msgToSend);
-        }
-        if (m_imgUpdated)
-        {
-            msgToSend = msg + " IMG_UP";
-            m_imgUpdated = false;
-            for (auto &connection : m_server.get_connections())
-                connection->send(msgToSend);
-        }
+        needsUpdateDynContour = false;
+        break;
     }
-
-    if (m_needsUpdate)
-    {
-        lock_guard<mutex> lock(m_mutex);
-        SetActorScale3D(FVector(m_aspect * 1.218 * m_scaleX, 1.218 * m_scaleY, 1.0));
-        m_dynContour = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(GetWorld(), UCanvasRenderTarget2D::StaticClass(), m_dynTexW, m_dynTexH);
-        m_dynContour->ClearColor = FLinearColor(0, 0, 0, 0);
-        m_dynContour->OnCanvasRenderTargetUpdate.AddDynamic(this, &AStimulus::drawContour);
-        m_dynTex->SetTextureParameterValue(FName(TEXT("ContourTex")), m_dynContour);
-        m_stimulusW = m_dynTexW;
-        m_stimulusH = m_dynTexH;
-        m_aois = m_dynAOIs;
-        m_activeAOI = -1;
-        m_selectedAOIs.Empty();
-        m_dynContour->UpdateResource();
-        m_staticTransform = GetTransform();
-        m_staticExtent = mesh->CalcLocalBounds().BoxExtent;
-        m_needsUpdate = false;
-        m_imgUpdated = true;
     }
 }
 
-UTexture2D *AStimulus::loadTexture2DFromFile(const FString &fullFilePath)
-{
-    UTexture2D *loadedT2D = nullptr;
 
-    IImageWrapperModule &imageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-    TSharedPtr<IImageWrapper> imageWrapper = imageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
 
-    TArray<uint8> rawFileData;
-    if (!FFileHelper::LoadFileToArray(rawFileData, *fullFilePath))
-        return nullptr;
 
-    if (imageWrapper.IsValid() && imageWrapper->SetCompressed(rawFileData.GetData(), rawFileData.Num()))
-    {
-        TArray<uint8> uncompressedBGRA;
-        if (imageWrapper->GetRaw(ERGBFormat::BGRA, 8, uncompressedBGRA))
-        {
-            loadedT2D = UTexture2D::CreateTransient(imageWrapper->GetWidth(), imageWrapper->GetHeight(), PF_B8G8R8A8);
-            if (!loadedT2D)
-                return nullptr;
 
-            void *textureData = loadedT2D->PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
-            FMemory::Memcpy(textureData, uncompressedBGRA.GetData(), uncompressedBGRA.Num());
-            loadedT2D->PlatformData->Mips[0].BulkData.Unlock();
 
-            loadedT2D->UpdateResource();
-        }
-    }
 
-    return loadedT2D;
-}
 
-UTexture2D *AStimulus::loadTexture2DFromBytes(const TArray<uint8> &bytes, EImageFormat fmt, int &w, int &h)
-{
-    UTexture2D *loadedT2D = nullptr;
 
-    IImageWrapperModule &imageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-    TSharedPtr<IImageWrapper> imageWrapper = imageWrapperModule.CreateImageWrapper(fmt);
 
-    if (imageWrapper.IsValid() && imageWrapper->SetCompressed(bytes.GetData(), bytes.Num()))
-    {
-        TArray<uint8> uncompressedBGRA;
-        if (imageWrapper->GetRaw(ERGBFormat::BGRA, 8, uncompressedBGRA))
-        {
-            w = imageWrapper->GetWidth();
-            h = imageWrapper->GetHeight();
-            loadedT2D = UTexture2D::CreateTransient(w, h, PF_B8G8R8A8);
-            if (!loadedT2D)
-                return nullptr;
 
-            void *textureData = loadedT2D->PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
-            FMemory::Memcpy(textureData, uncompressedBGRA.GetData(), uncompressedBGRA.Num());
-            loadedT2D->PlatformData->Mips[0].BulkData.Unlock();
 
-            loadedT2D->UpdateResource();
-        }
-    }
 
-    return loadedT2D;
-}
 
-void AStimulus::updateDynTex(const TArray<uint8> &img, EImageFormat fmt, float sx, float sy, const TArray<TSharedPtr<FJsonValue>> &aois)
-{
-    int w, h;
-    UTexture2D *tex = loadTexture2DFromBytes(img, fmt, w, h);
-    if (tex)
-    {
-        m_dynTex->SetTextureParameterValue(FName(TEXT("DynTex")), tex);
-        {
-            lock_guard<mutex> lock(m_mutex);
-            m_aspect = (float)w / (float)h;
-            m_scaleX = sx;
-            m_scaleY = sy;
-            m_dynTexW = w;
-            m_dynTexH = h;
-            m_dynAOIs.Empty();
-            for (auto value : aois)
-            {
-                AOI aoi;
-                auto nameField = value->AsObject()->TryGetField("name");
-                if (nameField)
-                    aoi.name = nameField->AsString();
-                auto pathField = value->AsObject()->TryGetField("path");
-                if (pathField)
-                {
-                    auto path = pathField->AsArray();
-                    for (auto point : path)
-                        aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
-                }
-                auto bboxField = value->AsObject()->TryGetField("bbox");
-                if (bboxField)
-                {
-                    auto bbox = bboxField->AsArray();
-                    aoi.bbox.lt = FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber());
-                    aoi.bbox.rb = FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber());
-                }
-                m_dynAOIs.Add(aoi);
-            }
-            m_needsUpdate = true;
-        }
-    }
-}
 
-void AStimulus::strokeCircle(UCanvas *cvs, const FVector2D &pos, float radius, float thickness, const FLinearColor &color) const
-{
-    const int n = 8;
-    for (int i = 0; i < n; ++i)
-    {
-        cvs->K2_DrawLine(FVector2D(pos.X + radius * cos((float)i / (float)(n - 1) * 2.0f * PI),
-                                   pos.Y + radius * sin((float)i / (float)(n - 1) * 2.0f * PI)),
-                         FVector2D(pos.X + radius * cos((float)(i + 1) / (float)(n - 1) * 2.0f * PI),
-                                   pos.Y + radius * sin((float)(i + 1) / (float)(n - 1) * 2.0f * PI)),
-                         thickness, color);
-    }
-}
 
-void AStimulus::fillCircle(UCanvas *cvs, const FVector2D &pos, float radius, const FLinearColor& color) const
-{
-    cvs->K2_DrawPolygon(nullptr, pos, FVector2D(radius), 16, color);
-}
 
-void AStimulus::drawContourOfAOI(UCanvas *cvs, const FLinearColor &color, float th, int aoi) const
-{
-    FVector2D pt = m_aois[aoi].path[0];
-    for (int i = 1, n = m_aois[aoi].path.Num(); i < n; ++i)
-    {
-        cvs->K2_DrawLine(pt, m_aois[aoi].path[i], th, color);
-        pt = m_aois[aoi].path[i];
-    }
-    cvs->K2_DrawLine(pt, m_aois[aoi].path[0], th, color);
-}
 
-void AStimulus::drawContour(UCanvas *cvs, int32 w, int32 h)
-{
-#ifdef EYE_DEBUG
-    float th = max(round((float)max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
-    strokeCircle(cvs, FVector2D(m_rawTarget.X * m_stimulusW, m_rawTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(1, 0, 0, 1));
-    strokeCircle(cvs, FVector2D(m_corrTarget.X * m_stimulusW, m_corrTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(0, 1, 0, 1));
-    strokeCircle(cvs, FVector2D(m_camTarget.X * m_stimulusW, m_camTarget.Y * m_stimulusH), 2.0f * th, th, FLinearColor(1, 0, 1, 1));
-#else
-    float th = max(round((float)max(m_stimulusW, m_stimulusH) * 0.0025f), 1.0f);
-    for (auto aoi : m_selectedAOIs)
-        drawContourOfAOI(cvs, FLinearColor(0, 0.2, 0, 1), th, aoi);
-    if (m_activeAOI != -1)
-        drawContourOfAOI(cvs, FLinearColor(1, 0, 0, 1), th, m_activeAOI);
-#endif // EYE_DEBUG
 
-    if (!m_mcRight->bHiddenInGame)
-        fillCircle(cvs, FVector2D(m_laser.X * m_stimulusW, m_laser.Y * m_stimulusH), 10, FLinearColor(1, 0, 0, 1));
 
-    if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
-        fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * m_stimulusW, m_customCalibTarget.location.Y * m_stimulusH), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
-}
 
-bool AStimulus::pointInPolygon(const FVector2D &pt, const TArray<FVector2D> &poly) const
-{
-    bool result = false;
-    int n = poly.Num();
-    for (int i = 0, j = n - 1; i < n; j = i++)
-    {
-        if (((poly[i].Y > pt.Y) != (poly[j].Y > pt.Y)) && (pt.X < (poly[j].X - poly[i].X) * (pt.Y - poly[i].Y) / (poly[j].Y - poly[i].Y) + poly[i].X))
-            result = !result;
-    }
-    return result;
-}
 
-bool AStimulus::pointInBBox(const FVector2D &pt, const BBox &bbox) const
-{
-    return pt.X >= bbox.lt.X && pt.Y >= bbox.lt.Y && pt.X <= bbox.rb.X && pt.Y <= bbox.rb.Y;
-}
 
-bool AStimulus::hitTest(const FVector2D &pt, const AOI &aoi) const
-{
-    return pointInBBox(pt, aoi.bbox) && pointInPolygon(pt, aoi.path);
-}
 
-int AStimulus::findActiveAOI(const FVector2D &pt) const
-{
-    for (int i = 0, n = m_aois.Num(); i < n; ++i)
-    {
-        if (hitTest(pt, m_aois[i]))
-            return i;
-    }
-    return -1;
-}
 
-void AStimulus::toggleSelectedAOI(int aoi)
-{
-    if (m_selectedAOIs.Contains(aoi))
-        m_selectedAOIs.Remove(aoi);
-    else
-        m_selectedAOIs.Add(aoi);
-}
 
-void AStimulus::trigger(bool isPressed)
-{
-    m_inSelectionMode = isPressed;
-    if (!isPressed)
-        m_rReleased = true;
-}
 
-void AStimulus::calibrate()
-{
-    ViveSR::anipal::Eye::LaunchEyeCalibration(nullptr);
-}
-
-void AStimulus::customCalibrate()
-{
-    m_needsCustomCalib = true;
-}
-
-void AStimulus::customCalib()
-{
-    customCalibrate();
-}
-
-void AStimulus::toggleMotionController(bool visible)
-{
-   m_mcRight->SetHiddenInGame(!visible, true);
-}
