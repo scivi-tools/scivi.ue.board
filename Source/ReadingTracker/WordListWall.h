@@ -26,9 +26,10 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetVisibility(bool is_visible);
 	UFUNCTION(BlueprintCallable)
-	void SetWallName(const FString& name);
+	void SetWallName(const FString& new_name);
 	UFUNCTION(BlueprintCallable)
 	void SetWallWidth(float width);
+	FORCEINLINE const FString& GetWallName() const { return name; }
 
 	void AddAOI(const FAOI* aoi);
 	void ClearList();
@@ -55,4 +56,5 @@ protected:
 	void OnClicked_RemoveEntry(URichButton* clickedButton, const FVector2D& clickPos);
 	bool bHiddenInGame = false;
 	TMap<const URichButton*, UUserWidget*> entries;//for fast searching of entry
+	FString name = TEXT("List");
 };

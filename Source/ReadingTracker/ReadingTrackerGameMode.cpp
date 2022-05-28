@@ -4,6 +4,9 @@
 #include "ReadingTrackerGameMode.h"
 #include "Stimulus.h"
 #include "BaseInformant.h"
+#include "Private/UI_Blank.h"
+#include "Components/Button.h"
+#include "Components/EditableText.h"
 #include "WordListWall.h"
 #include "ImageUtils.h"
 #include "IImageWrapper.h"
@@ -97,6 +100,8 @@ AReadingTrackerGameMode::AReadingTrackerGameMode(const FObjectInitializer& Objec
 {
     PrimaryActorTick.bStartWithTickEnabled = true;
     PrimaryActorTick.bCanEverTick = true;
+    static ConstructorHelpers::FClassFinder<UUserWidget> RecordingWidgetClass(TEXT("/Game/UI/UI_RecordVoice"));
+    RecordingMenuClass = RecordingWidgetClass.Class;
 }
 
 void AReadingTrackerGameMode::BeginPlay()
@@ -105,6 +110,7 @@ void AReadingTrackerGameMode::BeginPlay()
     auto instance = SRanipalEye_Framework::Instance();
     if (instance)
         instance->StartFramework(EyeVersion);
+
 }
 
 void AReadingTrackerGameMode::Tick(float DeltaTime)
@@ -127,6 +133,21 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
                 bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
                 informant->SetVisibility_MC_Right(visibility);
             }
+            else if (jsonParsed->TryGetField("Speech"))
+            {
+                if (informant->IsRecording()) 
+                {
+                    auto speech = jsonParsed->GetStringField("Speech");
+                    auto root = recording_menu->GetWidget();
+                    auto textWidget = Cast<UEditableText>(root->GetWidgetFromName("textNewName"));
+                    if (textWidget)
+                    {
+                        auto name = textWidget->GetText().ToString();
+                        name.Appendf(TEXT(" %s"), *speech);
+                        textWidget->SetText(FText::FromString(name));
+                    }
+                }
+            }
             else {
                 for (auto wall : walls) 
                 {
@@ -138,6 +159,8 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
         }
 
     }
+
+
 }
 
 void AReadingTrackerGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -176,6 +199,24 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
     informant = _informant;
     stimulus = GetWorld()->SpawnActor<AStimulus>(AStimulus::StaticClass());
     stimulus->BindInformant(informant);
+    //spawn recording menu
+    {
+        FActorSpawnParameters params;
+        params.Name = FName(TEXT("RecordingMenu"));
+        recording_menu = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
+        recording_menu->SetWidgetClass(RecordingMenuClass, FVector2D(1000.0f, 750.0f));
+        //recording_menu->SetActorHiddenInGame(true);//hide menu by default
+        auto root = recording_menu->GetWidget();
+        auto btnReady = Cast<UButton>(root->GetWidgetFromName(TEXT("btnReady")));
+        btnReady->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::CreateListOfWords);
+        auto btnClear = Cast<UButton>(root->GetWidgetFromName(TEXT("btnClear")));
+        btnClear->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::RecordingMenu_ClearNameForWall);
+
+        auto btnRecord = Cast<UButton>(root->GetWidgetFromName(TEXT("btnRecord")));
+        btnRecord->OnPressed.AddDynamic(informant, &ABaseInformant::StartRecording);
+        btnRecord->OnReleased.AddDynamic(informant, &ABaseInformant::StopRecording);
+        SetRecordingMenuVisibility(false);
+    }
     //create walls(but they invisible)
     for (int i = 0; i < MaxWallsCount; i++)
     {
@@ -189,23 +230,43 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
     }
     ReplaceWalls(510.0f);
     initWS();
+}
 
+void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
+{
+    recording_menu->SetActorHiddenInGame(!new_visibility);
+    recording_menu->SetActorEnableCollision(new_visibility);
+    RecordingMenu_ClearNameForWall();
+}
+
+void AReadingTrackerGameMode::RecordingMenu_ClearNameForWall()
+{
+    auto root = recording_menu->GetWidget();
+    auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
+    textBlock->SetText(FText::FromString(TEXT("")));
 }
 
 void AReadingTrackerGameMode::CreateListOfWords()
 {
+    auto root = recording_menu->GetWidget();
+    auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
     for(auto wall: walls)
         if (wall->IsHiddenInGame()) 
         {
             wall->SetVisibility(true);
+            auto wall_name = textBlock->GetText().ToString();
+            wall->SetWallName(wall_name);
+            SendWallLogToSciVi(EWallLogAction::NewWall, wall_name);
             break;
         }
+    SetRecordingMenuVisibility(false);
 }
 
 void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
 {
     wall->SetVisibility(false);
     wall->ClearList();
+    SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
 }
 
 void AReadingTrackerGameMode::ReplaceWalls(float radius)
@@ -217,6 +278,12 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
     stimulus->SetActorRotation(player_transform.GetRotation());
     stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
+    //Place RecordingMenu
+    recording_menu->SetActorScale3D(FVector(0.15f));
+    recording_menu->SetActorLocation(player_transform.GetLocation());
+    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, player_Z - 20.0f));
+    recording_menu->SetActorRotation(player_transform.GetRotation());
+    recording_menu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
 
     //it gets a BBox considering an object's rotation
     auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
@@ -253,14 +320,46 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
 
 void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
 {
-    for (auto aoi : stimulus->SelectedAOIs)
+    for (auto aoi : stimulus->SelectedAOIs) 
+    {
         wall->AddAOI(aoi);
+        SendWallLogToSciVi(EWallLogAction::AddAOI, wall->GetWallName(), aoi->name);
+    }
     //clear selection on stimulus
-    stimulus->SelectedAOIs.Empty();
-    stimulus->UpdateContours();
+    stimulus->ClearSelectedAOIs();  
 }
 
+
+
 // ---------------------- VR ------------------------
+
+void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI)
+{
+    FString msg;
+    FString ActionStr;
+    switch (Action)
+    {
+    case EWallLogAction::NewWall: ActionStr = TEXT("NewWall"); break;
+    case EWallLogAction::DeleteWall: ActionStr = TEXT("DeleteWall"); break;
+    case EWallLogAction::AddAOI: ActionStr = TEXT("AddAOI"); break;
+    case EWallLogAction::RemoveAOI: ActionStr = TEXT("RemoveAOI"); break;
+        default: ActionStr = TEXT("UnknownAction"); break;
+    }
+    if (Action == EWallLogAction::NewWall || Action == EWallLogAction::DeleteWall) 
+    {
+        msg = FString::Printf(TEXT("\"WallLog\": {"
+            "\"Action\": \"%s\","
+            "\"Wall\": \"%s\"}"), *ActionStr, *WallName);
+    }
+    else
+    {
+        msg = FString::Printf(TEXT("\"WallLog\": {"
+            "\"Action\": \"%s\","
+            "\"Wall\": \"%s\","
+            "\"AOI\": \"%s\"}"), *ActionStr, *WallName, *AOI);
+    }
+    this->Broadcast(msg);
+}
 
 void AReadingTrackerGameMode::CalibrateVR()
 {
@@ -364,6 +463,9 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 
 void AReadingTrackerGameMode::Broadcast(FString& message)
 {
+    FDateTime t = FDateTime::Now();
+    float time = t.ToUnixTimestamp() * 1000.0f + t.GetMillisecond();
+    auto msg = FString::Printf(TEXT("{\"Time\": %f, %s}"), time, *message);
     for (auto& connection : m_server.get_connections())//broadcast to everyone
-        connection->send(TCHAR_TO_UTF8(*message));
+        connection->send(TCHAR_TO_UTF8(*msg));
 }

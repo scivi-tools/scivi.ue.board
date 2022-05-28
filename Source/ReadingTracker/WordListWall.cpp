@@ -33,9 +33,9 @@ AWordListWall::AWordListWall()
 
 	ListHeader = CreateDefaultSubobject<UWidgetComponent>(TEXT("Delete Button"));
 	ListHeader->SetupAttachment(RootComponent);
-	ListHeader->SetRelativeLocation(FVector(0.0f, 0.0f, 330.0f));
+	ListHeader->SetRelativeLocation(FVector(0.0f, 0.0f, 355.0f));
 	ListHeader->SetUsingAbsoluteScale(true);
-	ListHeader->SetDrawSize(FVector2D(200.0f, 50.0f));
+	ListHeader->SetDrawSize(FVector2D(250, 100.0f));
 	ListHeader->SetWidgetClass(ListHeaderWidgetClass.Class);
 
 	List = CreateDefaultSubobject<UWidgetComponent>(TEXT("List"));
@@ -70,11 +70,15 @@ void AWordListWall::SetVisibility(bool is_visible)
 	SetActorHiddenInGame(bHiddenInGame);
 }
 
-void AWordListWall::SetWallName(const FString& name)
+void AWordListWall::SetWallName(const FString& new_name)
 {
 	auto txtName = Cast<UTextBlock>(ListHeader->GetWidget()->GetWidgetFromName(TEXT("txtWallName")));
-	if (txtName)
-		txtName->SetText(FText::FromString(name));
+	if (txtName) 
+	{
+		ListHeader->SetDrawSize(FVector2D(FMath::Max(250.0f, new_name.Len() * 20.0f), 100.0f));
+		txtName->SetText(FText::FromString(new_name));
+		name = new_name;
+	}
 }
 
 void AWordListWall::AddAOI(const FAOI* aoi)
@@ -127,10 +131,13 @@ void AWordListWall::OnClicked_RemoveEntry(URichButton* clickedButton, const FVec
 {
 	if (entries.Contains(clickedButton))
 	{
+		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 		auto entry = entries[clickedButton];
+		auto entry_name = entry->GetName().Replace(TEXT("_Entry"), TEXT(""));
 		auto image = Cast<UImage>(entry->GetWidgetFromName(TEXT("AOI_Image")));
 		entry->RemoveFromParent();
 		entries.Remove(clickedButton);
+		GM->SendWallLogToSciVi(EWallLogAction::RemoveAOI, name, entry_name);
 	}
 }
 

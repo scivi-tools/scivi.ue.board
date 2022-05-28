@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
+#include "ReadingTracker.h"
 #include "BaseInformant.generated.h"
 
 struct FGaze
@@ -39,6 +40,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetVisibility_MC_Left(bool visibility);
 	void GetGaze(FGaze& gaze) const;
+	UFUNCTION()
+	void StartRecording();
+	UFUNCTION()
+	void StopRecording();
+	bool IsRecording() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	UCameraComponent* CameraComponent;
@@ -59,6 +65,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	class UWidgetInteractionComponent* MC_Right_Interaction_Lazer;
 
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	class UAudioCaptureComponent* AudioCapture;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	class USubmixRecorder* Recorder;
+
 protected:
 	UFUNCTION()
 	void OnRTriggerPressed();
@@ -73,4 +84,6 @@ protected:
 	static const constexpr float MCNoActionTimeout = 10.0f;
 	float MC_Left_NoActionTime = 0.0f;
 	float MC_Right_NoActionTime = 0.0f;
+
+
 };

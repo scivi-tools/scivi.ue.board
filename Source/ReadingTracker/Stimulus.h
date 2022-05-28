@@ -26,6 +26,7 @@ public:
     void updateDynTex(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs);
     void BindInformant(class ABaseInformant* _informant);
     void UpdateContours();
+    void ClearSelectedAOIs();
 
     // ----------------- Input events -------------------
     void OnInFocus(const struct FGaze& gaze, const FHitResult& hitPoint);
@@ -56,7 +57,7 @@ public:
 protected:
     UFUNCTION()
     void OnClicked_CreateList();
-    void SendDataToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
+    void SendGazeToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
 
     FVector billboardToScene(const FVector2D& pos) const;
     FVector2D sceneToBillboard(const FVector& pos) const;

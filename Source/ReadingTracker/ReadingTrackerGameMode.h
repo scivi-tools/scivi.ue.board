@@ -15,6 +15,7 @@ THIRD_PARTY_INCLUDES_END
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "SRanipal_Eyes_Enums.h"
+#include "ReadingTracker.h"
 #include "ReadingTrackerGameMode.generated.h"
 
 //Channel to check collision with 
@@ -47,6 +48,15 @@ struct FAOI
 	}
 };
 
+UENUM()
+enum class EWallLogAction
+{
+	NewWall     UMETA(DisplayName = "NewWall"),
+	DeleteWall      UMETA(DisplayName = "DeleteWall"),
+	AddAOI   UMETA(DisplayName = "AddAOI"),
+	RemoveAOI UMETA(DisplayName = "RemoveAOI")
+};
+
 /**
  * 
  */
@@ -77,12 +87,25 @@ public:
 	void AddAOIsToList(AWordListWall* const wall);
 	UFUNCTION(BlueprintCallable)
 	void DeleteList(AWordListWall* const wall);
+	void SetRecordingMenuVisibility(bool new_visibility);
+	UFUNCTION()
+	void RecordingMenu_ClearNameForWall();
+	
+
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	TSubclassOf<UUserWidget> RecordingMenuClass;
 protected:
+	UPROPERTY()
 	class AStimulus* stimulus;
+	UPROPERTY()
 	class ABaseInformant* informant;
+	UPROPERTY()
+	class AUI_Blank* recording_menu;
+	UPROPERTY()
 	TArray<class AWordListWall*> walls;
 	bool direction_of_search = false;
 	int created_walls_count = 0;
+	
 
 	//------------------- VR ----------------------
 public:
@@ -93,8 +116,8 @@ public:
 
 //----------------------- SciVi networking --------------
 public:
+	void SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI = TEXT(""));
 	void Broadcast(FString& message);
-
 protected:
 	using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
 	void initWS();

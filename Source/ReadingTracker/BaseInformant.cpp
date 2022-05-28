@@ -5,16 +5,21 @@
 #include "ReadingTrackerGameMode.h"
 #include "Components/WidgetInteractionComponent.h"
 #include "Components/ArrowComponent.h"
+#include <AudioCaptureComponent.h>
+#include "Private/SubmixRecorder.h"
 #include "SRanipal_API_Eye.h"
 #include "SRanipalEye_Core.h"
 #include "SRanipalEye_FunctionLibrary.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "Stimulus.h"
 #include "XRMotionControllerBase.h"
+#include "Misc/Base64.h"
 
 // Sets default values
 ABaseInformant::ABaseInformant()
 {
+	static ConstructorHelpers::FObjectFinder<USoundSubmix> CaptureSubmixAsset(TEXT("SoundSubmix'/Game/CaptureSubmix.CaptureSubmix'"));
+
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 	// Take control of the default player
@@ -54,6 +59,14 @@ ABaseInformant::ABaseInformant()
 	MC_Right_Interaction_Lazer->DebugColor = FColor::Green;
 	MC_Right_Interaction_Lazer->InteractionDistance = 750.0f;
 	MC_Right_Interaction_Lazer->SetHiddenInGame(false);
+
+	AudioCapture = CreateDefaultSubobject<UAudioCaptureComponent>(TEXT("AudioCapture"));
+	AudioCapture->SetupAttachment(RootComponent);
+	AudioCapture->SoundSubmix = CaptureSubmixAsset.Object;
+
+	Recorder = CreateDefaultSubobject<USubmixRecorder>(TEXT("Recorder"));
+	Recorder->SetupAttachment(RootComponent);
+	Recorder->SubmixToRecord = CaptureSubmixAsset.Object;
 }
 
 // Called when the game starts or when spawned
@@ -65,6 +78,14 @@ void ABaseInformant::BeginPlay()
 	SetVisibility_MC_Left(false);
 	old_MC_Left_Direction = MC_Left->GetComponentLocation() + MC_Left->GetForwardVector();
 	old_MC_Right_Direction = MC_Right->GetComponentLocation() + MC_Right->GetForwardVector();
+
+	if (!Recorder->SubmixToRecord) 
+	{
+		Recorder->SubmixToRecord = dynamic_cast<USoundSubmix*>(AudioCapture->SoundSubmix);
+	}
+	AudioCapture->Activate();
+	Recorder->SetNumChannels(1);
+
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 	if (GM)
 		GM->NotifyInformantSpawned(this);
@@ -75,6 +96,7 @@ void ABaseInformant::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+	//collect gaze info
 	FGaze gaze;
 	FHitResult hitPoint(ForceInit);
 	GetGaze(gaze);
@@ -83,7 +105,7 @@ void ABaseInformant::Tick(float DeltaTime)
 	if (GM->RayTrace(this, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
 	{
 		auto focusedStimulus = Cast<AStimulus>(hitPoint.Actor);
-		if (focusedStimulus) 
+		if (focusedStimulus)
 			focusedStimulus->OnInFocus(gaze, hitPoint);
 	}
 
@@ -111,6 +133,19 @@ void ABaseInformant::Tick(float DeltaTime)
 	{
 		MC_Left_NoActionTime += DeltaTime;
 		if (MC_Left_NoActionTime >= MCNoActionTimeout) SetVisibility_MC_Left(false);
+	}
+
+	//process voice
+	if (Recorder->IsRecording() && Recorder->GetRecordedBuffersCount() > 0)
+	{
+		AudioSampleBuffer buffer;
+		Recorder->PopFirstRecordedBuffer(buffer);
+		auto b64pcm = FBase64::Encode((uint8_t*)buffer.RawPCMData, AudioSampleBuffer_MaxSamplesCount);
+		auto json = FString::Printf(TEXT("\"WAV\": {\"SampleRate\": %i,"
+				"\"PCM\": \"data:audio/wav;base64,%s\"}"),buffer.sample_rate, *b64pcm);
+		//if (GEngine)
+			//GEngine->AddOnScreenDebugMessage(rand(), 5, FColor::Green, json);
+		GM->Broadcast(json);
 	}
 }
 
@@ -211,4 +246,20 @@ void ABaseInformant::GetGaze(FGaze& gaze) const
 	gaze.right_pupil_diameter_mm = vd.right.pupil_diameter_mm;
 	gaze.right_pupil_openness = vd.right.eye_openness;
 	//here you can insert custom calibration
+}
+
+void ABaseInformant::StartRecording()
+{
+	Recorder->StartRecording();
+}
+
+void ABaseInformant::StopRecording()
+{
+	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+	Recorder->StopRecording();
+}
+
+bool ABaseInformant::IsRecording() const
+{
+	return Recorder->IsRecording();
 }
