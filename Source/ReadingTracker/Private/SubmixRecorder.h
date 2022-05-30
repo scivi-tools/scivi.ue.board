@@ -6,11 +6,7 @@
 #include "Components/SceneComponent.h"
 #include "AudioDevice.h"
 #include "StaticSampleBuffer.h"
-#include "../ReadingTracker.h"
 #include "SubmixRecorder.generated.h"
-
-
-//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBatchRecordedSignature, AudioSampleBuffer&, buffer);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class USubmixRecorder : public USceneComponent, public ISubmixBufferListener
@@ -26,18 +22,16 @@ protected:
 	virtual void BeginPlay() override;
 public:	
 	// Called every frame
-	//virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void DestroyComponent(bool bPromoteChildren = false) override;
-	void SetNumChannels(int newNumChannels);
-	void PopFirstRecordedBuffer(AudioSampleBuffer& destination);
-	std::size_t GetRecordedBuffersCount();
-	
+	int32 NumChannelsToRecord = 2;//support only 1 or 2
+	TFunction<void(const int16*, int, int, int)> OnRecorded = nullptr;
+
+
 	UFUNCTION(BlueprintCallable)
 	void StartRecording();
 	UFUNCTION(BlueprintCallable)
 	void StopRecording();
-	UFUNCTION(BlueprintCallable)
-	void Reset();
 	UFUNCTION(BlueprintCallable)
 	FORCEINLINE bool IsRecording() const { return bIsRecording; };
 
@@ -48,12 +42,11 @@ public:
 protected:
 	FCriticalSection use_queue;
 	FThreadSafeBool bIsRecording = false;
-	TResizableCircularQueue<AudioSampleBuffer> RecordingRawData{ 64 };
-	int RecordNumChannels = 2;
-	AudioSampleBuffer new_batch;
+	TResizableCircularQueue<Audio::TSampleBuffer<int16>> RecordQueue{ 64 };
+	
 
 	//---------------- ISubmixBufferListener Interface ---------------
 	virtual void OnNewSubmixBuffer(const USoundSubmix* OwningSubmix,
 		float* AudioData, int32 NumSamples, int32 NumChannels,
-		const int32 sample_rate, double AudioClock) override;
+		const int32 SampleRate, double AudioClock) override;
 };

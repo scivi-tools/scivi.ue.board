@@ -64,9 +64,10 @@ ABaseInformant::ABaseInformant()
 	AudioCapture->SetupAttachment(RootComponent);
 	AudioCapture->SoundSubmix = CaptureSubmixAsset.Object;
 
-	Recorder = CreateDefaultSubobject<USubmixRecorder>(TEXT("Recorder"));
-	Recorder->SetupAttachment(RootComponent);
-	Recorder->SubmixToRecord = CaptureSubmixAsset.Object;
+	RecorderComponent = CreateDefaultSubobject<USubmixRecorder>(TEXT("Recorder"));
+	RecorderComponent->SetupAttachment(RootComponent);
+	RecorderComponent->NumChannelsToRecord = 1;
+	RecorderComponent->SubmixToRecord = CaptureSubmixAsset.Object;
 }
 
 // Called when the game starts or when spawned
@@ -79,16 +80,49 @@ void ABaseInformant::BeginPlay()
 	old_MC_Left_Direction = MC_Left->GetComponentLocation() + MC_Left->GetForwardVector();
 	old_MC_Right_Direction = MC_Right->GetComponentLocation() + MC_Right->GetForwardVector();
 
-	if (!Recorder->SubmixToRecord) 
+	if (!RecorderComponent->SubmixToRecord) 
 	{
-		Recorder->SubmixToRecord = dynamic_cast<USoundSubmix*>(AudioCapture->SoundSubmix);
+		RecorderComponent->SubmixToRecord = dynamic_cast<USoundSubmix*>(AudioCapture->SoundSubmix);
 	}
+
+	//Create wav file for debug
+	/*struct WAVHEADER
+	{
+		int chunkId = 0x52494646;
+		int chunkSize = 0;
+		int format = 0x57415645;
+		int subchunk1Id = 0x666d7420;
+		int subchunk1Size = 16;
+		uint16 audioFormat = 1;
+		uint16 numChannels = 1;
+		int sampleRate = 48000;
+		int byteRate = 96000;
+		uint16 blockAlign = 2;
+		uint16 bitsPerSample = 16;
+		int subchunk2Id = 0x64617461;
+		int subchunk2Size = 0;
+	};
+	WAVHEADER header;
+	TArray64<uint8_t> arr((uint8_t*)&header, sizeof(header));
+	FFileHelper::SaveArrayToFile(arr, TEXT("aud.wav"));*/
+
+	RecorderComponent->OnRecorded = [this](const int16* AudioData, int NumChannels, int NumSamples, int SampleRate)
+	{
+		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+		/*TArray64<uint8_t> arr((uint8_t*)AudioData, NumSamples * sizeof(int16));
+		FFileHelper::SaveArrayToFile(arr, TEXT("aud.wav"));*/
+		auto b64pcm = FBase64::Encode((uint8_t*)AudioData, NumSamples * sizeof(int16));
+		auto json = FString::Printf(TEXT("\"WAV\": {\"SampleRate\": %i,"
+					"\"PCM\": \"data:audio/wav;base64,%s\"}"),  SampleRate, *b64pcm);
+		GM->Broadcast(json);
+	};
 	AudioCapture->Activate();
-	Recorder->SetNumChannels(1);
 
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 	if (GM)
 		GM->NotifyInformantSpawned(this);
+
+	//RecorderComponent->StartRecording();
 }
 
 // Called every frame
@@ -136,17 +170,17 @@ void ABaseInformant::Tick(float DeltaTime)
 	}
 
 	//process voice
-	if (Recorder->IsRecording() && Recorder->GetRecordedBuffersCount() > 0)
-	{
-		AudioSampleBuffer buffer;
-		Recorder->PopFirstRecordedBuffer(buffer);
-		auto b64pcm = FBase64::Encode((uint8_t*)buffer.RawPCMData, AudioSampleBuffer_MaxSamplesCount);
-		auto json = FString::Printf(TEXT("\"WAV\": {\"SampleRate\": %i,"
-				"\"PCM\": \"data:audio/wav;base64,%s\"}"),buffer.sample_rate, *b64pcm);
-		//if (GEngine)
-			//GEngine->AddOnScreenDebugMessage(rand(), 5, FColor::Green, json);
-		GM->Broadcast(json);
-	}
+	//if (Recorder->IsRecording() && Recorder->GetRecordedBuffersCount() > 0)
+	//{
+	//	AudioSampleBuffer buffer;
+	//	Recorder->PopFirstRecordedBuffer(buffer);
+	//	auto b64pcm = FBase64::Encode((uint8_t*)buffer.RawPCMData, AudioSampleBuffer_MaxSamplesCount);
+	//	auto json = FString::Printf(TEXT("\"WAV\": {\"SampleRate\": %i,"
+	//			"\"PCM\": \"data:audio/wav;base64,%s\"}"),buffer.sample_rate, *b64pcm);
+	//	//if (GEngine)
+	//		//GEngine->AddOnScreenDebugMessage(rand(), 5, FColor::Green, json);
+	//	GM->Broadcast(json);
+	//}
 }
 
 // Called to bind functionality to input
@@ -250,16 +284,16 @@ void ABaseInformant::GetGaze(FGaze& gaze) const
 
 void ABaseInformant::StartRecording()
 {
-	Recorder->StartRecording();
+	RecorderComponent->StartRecording();
 }
 
 void ABaseInformant::StopRecording()
 {
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-	Recorder->StopRecording();
+	RecorderComponent->StopRecording();
 }
 
 bool ABaseInformant::IsRecording() const
 {
-	return Recorder->IsRecording();
+	return RecorderComponent->IsRecording();
 }

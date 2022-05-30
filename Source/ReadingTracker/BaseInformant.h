@@ -68,7 +68,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	class UAudioCaptureComponent* AudioCapture;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	class USubmixRecorder* Recorder;
+	class USubmixRecorder* RecorderComponent;
 
 protected:
 	UFUNCTION()
