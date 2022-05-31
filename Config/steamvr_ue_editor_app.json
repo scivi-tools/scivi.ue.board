@@ -2,15 +2,15 @@
 	"source": "UE",
 	"applications": [
 		{
-			"app_key": "application.generated.ue.readingtracker-15973114.ue4editor.exe",
+			"app_key": "application.generated.ue.readingtracker-17735300.ue4editor.exe",
 			"launch_type": "url",
 			"url": "steam://launch/",
-			"action_manifest_path": "C:/Users/User/Documents/Unreal Projects/ReadingTracker/Config/SteamVRBindings/steamvr_manifest.json",
+			"action_manifest_path": "C:/Users/Konstantin Ryabinin/Desktop/scivi.ue.board/Config/SteamVRBindings/steamvr_manifest.json",
 			"strings":
 			{
 				"en_us":
 				{
-					"name": "ReadingTracker-15973114 [UE Editor]"
+					"name": "ReadingTracker-17735300 [UE Editor]"
 				}
 			}
 		}
