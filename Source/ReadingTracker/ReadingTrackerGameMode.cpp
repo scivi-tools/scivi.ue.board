@@ -225,6 +225,7 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         params.Name = FName(wall_name);
         auto wall = GetWorld()->SpawnActor<AWordListWall>(AWordListWall::StaticClass(), params);
         wall->SetVisibility(false);
+        wall->SetActorEnableCollision(false);
         wall->SetWallName(wall_name);
         walls.Add(wall);
     }
@@ -254,6 +255,7 @@ void AReadingTrackerGameMode::CreateListOfWords()
         if (wall->IsHiddenInGame()) 
         {
             wall->SetVisibility(true);
+            wall->SetActorEnableCollision(true);
             auto wall_name = textBlock->GetText().ToString();
             wall->SetWallName(wall_name);
             SendWallLogToSciVi(EWallLogAction::NewWall, wall_name);
@@ -265,6 +267,7 @@ void AReadingTrackerGameMode::CreateListOfWords()
 void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
 {
     wall->SetVisibility(false);
+    wall->SetActorEnableCollision(false);
     wall->ClearList();
     SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
 }
@@ -328,8 +331,6 @@ void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
     //clear selection on stimulus
     stimulus->ClearSelectedAOIs();  
 }
-
-
 
 // ---------------------- VR ------------------------
 
