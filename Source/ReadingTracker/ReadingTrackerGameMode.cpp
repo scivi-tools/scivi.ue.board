@@ -135,23 +135,21 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
             }
             else if (jsonParsed->TryGetField("Speech"))
             {
-                if (informant->IsRecording()) 
+                auto speech = jsonParsed->GetStringField("Speech");
+                auto root = recording_menu->GetWidget();
+                auto textWidget = Cast<UEditableText>(root->GetWidgetFromName("textNewName"));
+                if (textWidget)
                 {
-                    auto speech = jsonParsed->GetStringField("Speech");
-                    auto root = recording_menu->GetWidget();
-                    auto textWidget = Cast<UEditableText>(root->GetWidgetFromName("textNewName"));
-                    if (textWidget)
-                    {
-                        auto name = textWidget->GetText().ToString();
-                        name.Appendf(TEXT(" %s"), *speech);
-                        textWidget->SetText(FText::FromString(name));
-                    }
+                    auto name = textWidget->GetText().ToString();
+                    name.Appendf(TEXT(" %s"), *speech);
+                    textWidget->SetText(FText::FromString(name));
                 }
             }
             else {
                 for (auto wall : walls) 
                 {
                     wall->SetVisibility(false);
+                    wall->SetActorEnableCollision(false);
                     wall->ClearList();
                 }
                 ParseNewImage(jsonParsed);

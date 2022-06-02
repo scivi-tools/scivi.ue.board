@@ -26,7 +26,7 @@ public:
 	virtual void DestroyComponent(bool bPromoteChildren = false) override;
 	int32 NumChannelsToRecord = 2;//support only 1 or 2
 	TFunction<void(const int16*, int, int, int)> OnRecorded = nullptr;
-
+	TFunction<void()> OnRecordFinished = nullptr;
 
 	UFUNCTION(BlueprintCallable)
 	void StartRecording();
@@ -43,7 +43,6 @@ protected:
 	FCriticalSection use_queue;
 	FThreadSafeBool bIsRecording = false;
 	TResizableCircularQueue<Audio::TSampleBuffer<int16>> RecordQueue{ 64 };
-	
 
 	//---------------- ISubmixBufferListener Interface ---------------
 	virtual void OnNewSubmixBuffer(const USoundSubmix* OwningSubmix,

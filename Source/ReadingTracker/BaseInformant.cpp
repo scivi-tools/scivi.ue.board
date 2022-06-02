@@ -116,6 +116,12 @@ void ABaseInformant::BeginPlay()
 					"\"PCM\": \"data:audio/wav;base64,%s\"}"),  SampleRate, *b64pcm);
 		GM->Broadcast(json);
 	};
+	RecorderComponent->OnRecordFinished = [this]()
+	{
+		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+		auto json = FString::Printf(TEXT("\"WAV\": \"End\""));
+		GM->Broadcast(json);
+	};
 	AudioCapture->Activate();
 
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
@@ -289,7 +295,6 @@ void ABaseInformant::StartRecording()
 
 void ABaseInformant::StopRecording()
 {
-	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 	RecorderComponent->StopRecording();
 }
 

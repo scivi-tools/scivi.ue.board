@@ -39,6 +39,8 @@ void USubmixRecorder::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 			OnRecorded(buffer.GetData(), buffer.GetNumChannels(), buffer.GetNumSamples(), buffer.GetSampleRate());
 		}
 		RecordQueue.Pop();
+		if (OnRecordFinished && !bIsRecording && RecordQueue.IsEmpty())
+			OnRecordFinished();
 	}
 }
 
