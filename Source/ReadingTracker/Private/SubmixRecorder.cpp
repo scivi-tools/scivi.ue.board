@@ -30,18 +30,17 @@ void USubmixRecorder::BeginPlay()
 
 void USubmixRecorder::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-	if (bIsRecording)
+	FScopeLock lock(&use_queue);
+	if (!RecordQueue.IsEmpty())
 	{
-		FScopeLock lock(&use_queue);
-		if (RecordQueue.IsEmpty() > 0) 
+		if (OnRecorded) 
 		{
-			if (OnRecorded) 
-			{
-				auto& buffer = RecordQueue.Peek();
-				OnRecorded(buffer.GetData(), buffer.GetNumChannels(), buffer.GetNumSamples(), buffer.GetSampleRate());
-			}
-			RecordQueue.Pop();
+			auto& buffer = RecordQueue.Peek();
+			OnRecorded(buffer.GetData(), buffer.GetNumChannels(), buffer.GetNumSamples(), buffer.GetSampleRate());
 		}
+		RecordQueue.Pop();
+		if (OnRecordFinished && !bIsRecording && RecordQueue.IsEmpty())
+			OnRecordFinished();
 	}
 }
 
