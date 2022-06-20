@@ -131,7 +131,8 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
             {
                 auto PC = GetWorld()->GetFirstPlayerController();
                 bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
-                informant->SetVisibility_MC_Right(visibility);
+                //informant->SciVi_MCLeft_Visibility = visibility;
+                informant->SciVi_MCRight_Visibility = visibility;
             }
             else if (jsonParsed->TryGetField("Speech"))
             {
