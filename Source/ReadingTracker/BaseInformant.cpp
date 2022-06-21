@@ -39,7 +39,6 @@ ABaseInformant::ABaseInformant()
 	MC_Left->MotionSource = FXRMotionControllerBase::LeftHandSourceId;
 	MC_Left_Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MCLeft_Mesh"));
 	MC_Left_Mesh->SetupAttachment(MC_Left);
-	MC_Left_Mesh->SetRelativeRotation(FRotator(0.0f, 90.0f, 90.0f));
 	MC_Left_Interaction_Lazer = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("MCLeft_Lazer"));
 	MC_Left_Interaction_Lazer->SetupAttachment(MC_Left);
 	MC_Left_Interaction_Lazer->bShowDebug = true;
@@ -52,7 +51,6 @@ ABaseInformant::ABaseInformant()
 	MC_Right->SetupAttachment(RootComponent);
 	MC_Right_Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MCRight_Mesh"));
 	MC_Right_Mesh->SetupAttachment(MC_Right);
-	MC_Right_Mesh->SetRelativeRotation(FRotator(0.0f, 90.0f, 90.0f));
 	MC_Right_Interaction_Lazer = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("MCRight_Lazer"));
 	MC_Right_Interaction_Lazer->SetupAttachment(MC_Right);
 	MC_Right_Interaction_Lazer->bShowDebug = true;
@@ -77,8 +75,6 @@ void ABaseInformant::BeginPlay()
 	UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Floor);
 	SetVisibility_MC_Right(false);
 	SetVisibility_MC_Left(false);
-	old_MC_Left_Direction = MC_Left->GetComponentLocation() + MC_Left->GetForwardVector();
-	old_MC_Right_Direction = MC_Right->GetComponentLocation() + MC_Right->GetForwardVector();
 
 	if (!RecorderComponent->SubmixToRecord) 
 	{
@@ -127,8 +123,6 @@ void ABaseInformant::BeginPlay()
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 	if (GM)
 		GM->NotifyInformantSpawned(this);
-
-	//RecorderComponent->StartRecording();
 }
 
 // Called every frame
@@ -149,44 +143,10 @@ void ABaseInformant::Tick(float DeltaTime)
 			focusedStimulus->OnInFocus(gaze, hitPoint);
 	}
 
-	//check if Right controller has moved
-	auto MC_Right_direction = MC_Right->GetComponentLocation() + MC_Right->GetForwardVector();
-	if (MC_Right_direction != old_MC_Right_Direction)
-	{
-		SetVisibility_MC_Right(true);
-		MC_Right_NoActionTime = 0.0;
-	}
-	else
-	{
-		MC_Right_NoActionTime += DeltaTime;
-		if (MC_Right_NoActionTime >= MCNoActionTimeout) SetVisibility_MC_Right(false);
-	}
-
-	//check if Left controller has moved
-	auto MC_Left_direction = MC_Left->GetComponentLocation() + MC_Left->GetForwardVector();
-	if (MC_Left_direction != old_MC_Left_Direction)
-	{
-		SetVisibility_MC_Left(true);
-		MC_Left_NoActionTime = 0.0;
-	}
-	else
-	{
-		MC_Left_NoActionTime += DeltaTime;
-		if (MC_Left_NoActionTime >= MCNoActionTimeout) SetVisibility_MC_Left(false);
-	}
-
-	//process voice
-	//if (Recorder->IsRecording() && Recorder->GetRecordedBuffersCount() > 0)
-	//{
-	//	AudioSampleBuffer buffer;
-	//	Recorder->PopFirstRecordedBuffer(buffer);
-	//	auto b64pcm = FBase64::Encode((uint8_t*)buffer.RawPCMData, AudioSampleBuffer_MaxSamplesCount);
-	//	auto json = FString::Printf(TEXT("\"WAV\": {\"SampleRate\": %i,"
-	//			"\"PCM\": \"data:audio/wav;base64,%s\"}"),buffer.sample_rate, *b64pcm);
-	//	//if (GEngine)
-	//		//GEngine->AddOnScreenDebugMessage(rand(), 5, FColor::Green, json);
-	//	GM->Broadcast(json);
-	//}
+	if (MC_Left->IsTracked() && SciVi_MCLeft_Visibility == MC_Left->bHiddenInGame)
+		SetVisibility_MC_Left(SciVi_MCLeft_Visibility);
+	if (MC_Right->IsTracked() && SciVi_MCRight_Visibility == MC_Right->bHiddenInGame)
+		SetVisibility_MC_Right(SciVi_MCRight_Visibility);
 }
 
 // Called to bind functionality to input
@@ -201,9 +161,6 @@ void ABaseInformant::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 void ABaseInformant::OnRTriggerPressed()
 {
-	MC_Right_NoActionTime = 0.0f;
-	SetVisibility_MC_Right(true);
-
 	FGaze gaze;
 	GetGaze(gaze);
 	const float ray_length = 1000.0f;
@@ -257,19 +214,27 @@ void ABaseInformant::CameraMove_UpDown(float value)
 
 void ABaseInformant::SetVisibility_MC_Right(bool visibility)
 {
-	if (IsValid(MC_Right)) 
+	if (IsValid(MC_Right) && IsValid(MC_Right_Mesh) && IsValid(MC_Right_Interaction_Lazer))
 	{
 		MC_Right->SetHiddenInGame(!visibility, true);
 		MC_Right_Interaction_Lazer->bShowDebug = visibility;
+		if (visibility)
+			MC_Right_Interaction_Lazer->Activate();
+		else
+			MC_Right_Interaction_Lazer->Deactivate();
 	}
 }
 
 void ABaseInformant::SetVisibility_MC_Left(bool visibility)
 {
-	if (IsValid(MC_Left))
+	if (IsValid(MC_Left) && IsValid(MC_Left_Mesh) && IsValid(MC_Left_Interaction_Lazer))
 	{
 		MC_Left->SetHiddenInGame(!visibility, true);
 		MC_Left_Interaction_Lazer->bShowDebug = visibility;
+		if (visibility)
+			MC_Left_Interaction_Lazer->Activate();
+		else
+			MC_Left_Interaction_Lazer->Deactivate();
 	}
 }
 

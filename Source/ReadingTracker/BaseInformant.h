@@ -70,6 +70,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	class USubmixRecorder* RecorderComponent;
 
+	bool SciVi_MCLeft_Visibility = false;
+	bool SciVi_MCRight_Visibility = false;
+
 protected:
 	UFUNCTION()
 	void OnRTriggerPressed();
@@ -79,11 +82,6 @@ protected:
 	void CameraMove_LeftRight(float value);
 	UFUNCTION()
 	void CameraMove_UpDown(float value);
-	FVector old_MC_Left_Direction;
-	FVector old_MC_Right_Direction;
-	static const constexpr float MCNoActionTimeout = 10.0f;
-	float MC_Left_NoActionTime = 0.0f;
-	float MC_Right_NoActionTime = 0.0f;
 
-
+	
 };
