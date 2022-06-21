@@ -214,7 +214,7 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         auto btnRecord = Cast<UButton>(root->GetWidgetFromName(TEXT("btnRecord")));
         btnRecord->OnPressed.AddDynamic(informant, &ABaseInformant::StartRecording);
         btnRecord->OnReleased.AddDynamic(informant, &ABaseInformant::StopRecording);
-        SetRecordingMenuVisibility(false);
+        //SetRecordingMenuVisibility(false);
     }
     //create walls(but they invisible)
     for (int i = 0; i < MaxWallsCount; i++)
@@ -274,7 +274,8 @@ void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
 void AReadingTrackerGameMode::ReplaceWalls(float radius)
 {
     auto& player_transform = informant->GetTransform();
-    float player_Z = player_transform.GetLocation().Z;
+    float player_Z = player_transform.GetLocation().Z; //player_height
+    float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
     //place stimulus in front of informant
     stimulus->SetActorLocation(player_transform.GetLocation());
     stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
@@ -283,7 +284,7 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     //Place RecordingMenu
     recording_menu->SetActorScale3D(FVector(0.15f));
     recording_menu->SetActorLocation(player_transform.GetLocation());
-    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, player_Z - 20.0f));
+    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
     recording_menu->SetActorRotation(player_transform.GetRotation());
     recording_menu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
 
