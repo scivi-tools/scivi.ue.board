@@ -39,9 +39,16 @@ void USubmixRecorder::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 			OnRecorded(buffer.GetData(), buffer.GetNumChannels(), buffer.GetNumSamples(), buffer.GetSampleRate());
 		}
 		RecordQueue.Pop();
-		if (OnRecordFinished && !bIsRecording && RecordQueue.IsEmpty())
-			OnRecordFinished();
+		bRecordFinished = false;
 	}
+	else
+	if (OnRecordFinished && !bIsRecording && !bRecordFinished)
+	{
+		OnRecordFinished();
+		bRecordFinished = true;
+		UE_LOG(LogTemp, Display, TEXT("On Record Finished"));
+	}
+	else UE_LOG(LogTemp, Display, TEXT("%i, %i"), RecordQueue.Count(), !!bIsRecording);
 }
 
 void USubmixRecorder::DestroyComponent(bool bPromoteChildren)
@@ -57,6 +64,7 @@ void USubmixRecorder::DestroyComponent(bool bPromoteChildren)
 void USubmixRecorder::StartRecording()
 {
 	bIsRecording = true;
+	bRecordFinished = false;
 }
 
 void USubmixRecorder::StopRecording()

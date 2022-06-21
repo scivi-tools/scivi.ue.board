@@ -71,7 +71,7 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	int MaxWallsCount = 5;
+	int MaxWallsCount = 9;
 
 	UFUNCTION(BlueprintCallable)
 	bool RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FHitResult& hitResult);

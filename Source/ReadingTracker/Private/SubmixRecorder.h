@@ -42,6 +42,7 @@ public:
 protected:
 	FCriticalSection use_queue;
 	FThreadSafeBool bIsRecording = false;
+	bool bRecordFinished = true;
 	TResizableCircularQueue<Audio::TSampleBuffer<int16>> RecordQueue{ 64 };
 
 	//---------------- ISubmixBufferListener Interface ---------------

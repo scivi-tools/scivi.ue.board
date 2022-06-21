@@ -214,7 +214,7 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         auto btnRecord = Cast<UButton>(root->GetWidgetFromName(TEXT("btnRecord")));
         btnRecord->OnPressed.AddDynamic(informant, &ABaseInformant::StartRecording);
         btnRecord->OnReleased.AddDynamic(informant, &ABaseInformant::StopRecording);
-        //SetRecordingMenuVisibility(false);
+        SetRecordingMenuVisibility(false);
     }
     //create walls(but they invisible)
     for (int i = 0; i < MaxWallsCount; i++)
@@ -291,11 +291,11 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     //it gets a BBox considering an object's rotation
     auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
 
-    int n = 2 * MaxWallsCount - 2;
+    int n = 12;//2 * MaxWallsCount - 2;
     float width = BB.X;// width of one wall = half of width of stimulus
     //place other walls around the informant
     float angle_per_wall = 2.0f * PI / (float)n;
-    float angle = 0.0f;
+    float angle = PI / 6.0f;
     for (int i = 0; i < MaxWallsCount / 2; ++i, angle -= angle_per_wall)
     {
         float x_offset = FMath::Cos(angle) * radius;
