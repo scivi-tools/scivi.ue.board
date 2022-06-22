@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ReadingTrackerGameMode.h"
@@ -7,6 +7,7 @@
 #include "Private/UI_Blank.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
+#include "Components/WidgetComponent.h"
 #include "WordListWall.h"
 #include "ImageUtils.h"
 #include "IImageWrapper.h"
@@ -234,6 +235,13 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
 
 void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
 {
+    //replace recording menu according camera pos
+    auto& player_transform = informant->GetTransform();
+    float player_Z = player_transform.GetLocation().Z; //player_height
+    float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
+    recording_menu->SetActorLocation(player_transform.GetLocation());
+    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
+
     recording_menu->SetActorHiddenInGame(!new_visibility);
     recording_menu->SetActorEnableCollision(new_visibility);
     RecordingMenu_ClearNameForWall();
@@ -250,17 +258,25 @@ void AReadingTrackerGameMode::CreateListOfWords()
 {
     auto root = recording_menu->GetWidget();
     auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
-    for(auto wall: walls)
-        if (wall->IsHiddenInGame()) 
+    auto wall_name = textBlock->GetText().ToString();
+
+    int visible_count = 0;
+    for (auto wall : walls)
+    {
+        if (wall->IsHiddenInGame())
         {
             wall->SetVisibility(true);
             wall->SetActorEnableCollision(true);
-            auto wall_name = textBlock->GetText().ToString();
             wall->SetWallName(wall_name);
             SendWallLogToSciVi(EWallLogAction::NewWall, wall_name);
             break;
         }
+        else ++visible_count;
+    }
     SetRecordingMenuVisibility(false);
+
+    if (visible_count == MaxWallsCount - 1)
+        stimulus->SetEnabled_CreateListButton(false);
 }
 
 void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
@@ -269,6 +285,7 @@ void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
     wall->SetActorEnableCollision(false);
     wall->ClearList();
     SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
+    stimulus->SetEnabled_CreateListButton(true);
 }
 
 void AReadingTrackerGameMode::ReplaceWalls(float radius)
@@ -292,7 +309,6 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
 
     int n = 12;//2 * MaxWallsCount - 2;
-    float width = BB.X;// width of one wall = half of width of stimulus
     //place other walls around the informant
     float angle_per_wall = 2.0f * PI / (float)n;
     float angle = PI / 6.0f;
@@ -302,11 +318,9 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
         float y_offset = FMath::Sin(angle) * radius + radius / 2.0f;
         walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(x_offset, y_offset, -player_Z));
         walls[2 * i]->SetActorRotation(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f));
-        walls[2 * i]->SetWallWidth(width);
 
         walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-x_offset, y_offset, -player_Z));
         walls[2 * i + 1]->SetActorRotation(FRotator(0.0f, -FMath::RadiansToDegrees(angle), 0.0f));
-        walls[2 * i + 1]->SetWallWidth(width);
     }   
 
     if (MaxWallsCount % 2 == 1)
@@ -314,7 +328,6 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
         int i = MaxWallsCount - 1;
         walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0f, -radius / 2.0f, -player_Z));
         walls[i]->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
-        walls[i]->SetWallWidth(width);
     }
 
     //So strange algorithm for placing the walls is for sorting the walls by remoteness from stimulus.

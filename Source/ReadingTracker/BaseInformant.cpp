@@ -43,7 +43,7 @@ ABaseInformant::ABaseInformant()
 	MC_Left_Interaction_Lazer->SetupAttachment(MC_Left);
 	MC_Left_Interaction_Lazer->bShowDebug = true;
 	MC_Left_Interaction_Lazer->DebugColor = FColor::Green;
-	MC_Left_Interaction_Lazer->InteractionDistance = 750.0f;
+	MC_Left_Interaction_Lazer->InteractionDistance = 1500.0f;
 	MC_Left_Interaction_Lazer->SetHiddenInGame(false);
 
 	MC_Right = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MC_Right"));
@@ -55,7 +55,7 @@ ABaseInformant::ABaseInformant()
 	MC_Right_Interaction_Lazer->SetupAttachment(MC_Right);
 	MC_Right_Interaction_Lazer->bShowDebug = true;
 	MC_Right_Interaction_Lazer->DebugColor = FColor::Green;
-	MC_Right_Interaction_Lazer->InteractionDistance = 750.0f;
+	MC_Right_Interaction_Lazer->InteractionDistance = 1500.0f;
 	MC_Right_Interaction_Lazer->SetHiddenInGame(false);
 
 	AudioCapture = CreateDefaultSubobject<UAudioCaptureComponent>(TEXT("AudioCapture"));
