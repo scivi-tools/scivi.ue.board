@@ -124,8 +124,10 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
         TSharedRef<TJsonReader<TCHAR>> jsonReader = TJsonReaderFactory<TCHAR>::Create(json_text);
         if (FJsonSerializer::Deserialize(jsonReader, jsonParsed))
         {
-            if (jsonParsed->TryGetField("calibrate"))
+            if (jsonParsed->TryGetField("calibrate")) {
+                UE_LOG(LogTemp, Display, TEXT("start calibration"));
                 CalibrateVR();
+            }
             else if (jsonParsed->TryGetField("customCalibrate"))
                 stimulus->customCalibrate();
             else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
@@ -293,9 +295,10 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     auto& player_transform = informant->GetTransform();
     float player_Z = player_transform.GetLocation().Z; //player_height
     float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
+    float stimulus_remoteness = 600.0f;
     //place stimulus in front of informant
     stimulus->SetActorLocation(player_transform.GetLocation());
-    stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
+    stimulus->AddActorWorldOffset(FVector(0.0f, stimulus_remoteness, -player_Z));
     stimulus->SetActorRotation(player_transform.GetRotation());
     stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
     //Place RecordingMenu

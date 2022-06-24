@@ -378,6 +378,7 @@ void AStimulus::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index,
         gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
         gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, Id);
     GM->Broadcast(json);
+    //cf - certainty factor
 }
 
 void AStimulus::OnClicked_CreateList()
