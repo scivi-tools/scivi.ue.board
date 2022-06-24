@@ -27,6 +27,7 @@ public:
     void BindInformant(class ABaseInformant* _informant);
     void UpdateContours();
     void ClearSelectedAOIs();
+    void SetEnabled_CreateListButton(bool enabled);
 
     // ----------------- Input events -------------------
     void OnInFocus(const struct FGaze& gaze, const FHitResult& hitPoint);
@@ -74,7 +75,6 @@ protected:
     FAOI* findAOI(const FVector2D& pt, int& out_index) const;
 
     class ABaseInformant* informant = nullptr;
-    FVector2D m_laser;
    
 
     //dynamic texture

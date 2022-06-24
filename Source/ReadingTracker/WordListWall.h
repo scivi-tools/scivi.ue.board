@@ -27,9 +27,8 @@ public:
 	void SetVisibility(bool is_visible);
 	UFUNCTION(BlueprintCallable)
 	void SetWallName(const FString& new_name);
-	UFUNCTION(BlueprintCallable)
-	void SetWallWidth(float width);
 	FORCEINLINE const FString& GetWallName() const { return name; }
+	FORCEINLINE float GetWallWidth() const { return GetActorRelativeScale3D().Z * 100.0f; }
 
 	void AddAOI(const FAOI* aoi);
 	void ClearList();
