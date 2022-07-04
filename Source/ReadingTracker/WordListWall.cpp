@@ -86,8 +86,15 @@ void AWordListWall::AddAOI(const FAOI* aoi)
 	auto list = Cast<UScrollBox>(List->GetWidget()->GetWidgetFromName(TEXT("List")));
 	auto entry_name = FName(aoi->name + TEXT("_Entry"));
 	//if list doesnt contains an entry then insert
+	auto childs = list->GetAllChildren();
+	/*UE_LOG(LogTemp, Display, TEXT("add aoi begin"));
+	for (auto child : childs)
+	{
+		UE_LOG(LogTemp, Display, TEXT("%s"), *child->GetFName().ToString());
+	}*/
 
-	if (IsValid(aoi->image) && !list->GetAllChildren().ContainsByPredicate([entry_name](UWidget* widget) {return widget->GetFName() == entry_name; }))
+	if (IsValid(aoi->image) &&
+		!list->GetAllChildren().ContainsByPredicate([entry_name](UWidget* widget) {return widget->GetFName() == entry_name; }))
 	{
 		auto entry = UUserWidget::CreateWidgetInstance(*GetWorld(), EntryWidgetClass, entry_name);
 		auto image = Cast<UImage>(entry->GetWidgetFromName(TEXT("AOI_Image")));
@@ -96,7 +103,11 @@ void AWordListWall::AddAOI(const FAOI* aoi)
 		btnRemoveEntry->OnClicked.AddDynamic(this, &AWordListWall::OnClicked_RemoveEntry);
 		list->AddChild(entry);
 		entries.Add(btnRemoveEntry, entry);
+		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+		GM->SendWallLogToSciVi(EWallLogAction::AddAOI, this->GetWallName(), aoi->name);
 	}
+	else if (!IsValid(aoi->image))
+		UE_LOG(LogTemp, Display, TEXT("aoi->image isn't valid"));
 }
 
 void AWordListWall::ClearList()

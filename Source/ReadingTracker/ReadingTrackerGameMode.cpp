@@ -207,7 +207,6 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         params.Name = FName(TEXT("RecordingMenu"));
         recording_menu = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
         recording_menu->SetWidgetClass(RecordingMenuClass, FVector2D(1000.0f, 750.0f));
-        //recording_menu->SetActorHiddenInGame(true);//hide menu by default
         auto root = recording_menu->GetWidget();
         auto btnReady = Cast<UButton>(root->GetWidgetFromName(TEXT("btnReady")));
         btnReady->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::CreateListOfWords);
@@ -217,7 +216,7 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         auto btnRecord = Cast<UButton>(root->GetWidgetFromName(TEXT("btnRecord")));
         btnRecord->OnPressed.AddDynamic(informant, &ABaseInformant::StartRecording);
         btnRecord->OnReleased.AddDynamic(informant, &ABaseInformant::StopRecording);
-        SetRecordingMenuVisibility(false);
+        SetRecordingMenuVisibility(false);//hide menu by default
     }
     //create walls(but they invisible)
     for (int i = 0; i < MaxWallsCount; i++)
@@ -242,7 +241,7 @@ void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
     float player_Z = player_transform.GetLocation().Z; //player_height
     float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
     recording_menu->SetActorLocation(player_transform.GetLocation());
-    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
+    recording_menu->AddActorWorldOffset(FVector(0.0f, 170.0f, camera_Z - player_Z));
 
     recording_menu->SetActorHiddenInGame(!new_visibility);
     recording_menu->SetActorEnableCollision(new_visibility);
@@ -304,7 +303,7 @@ void AReadingTrackerGameMode::ReplaceWalls(float radius)
     //Place RecordingMenu
     recording_menu->SetActorScale3D(FVector(0.15f));
     recording_menu->SetActorLocation(player_transform.GetLocation());
-    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
+    recording_menu->AddActorWorldOffset(FVector(0.0f, 170.0f, camera_Z - player_Z));
     recording_menu->SetActorRotation(player_transform.GetRotation());
     recording_menu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
 
@@ -342,7 +341,6 @@ void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
     for (auto aoi : stimulus->SelectedAOIs) 
     {
         wall->AddAOI(aoi);
-        SendWallLogToSciVi(EWallLogAction::AddAOI, wall->GetWallName(), aoi->name);
     }
     //clear selection on stimulus
     stimulus->ClearSelectedAOIs();  
@@ -446,12 +444,20 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
         float sy = json->GetNumberField("scaleY");
         UTexture2D* texture = loadTexture2DFromBytes(img, fmt);
         TArray<FAOI> AOIs;
+        TMap<FString, int> counts;
+        int last_id = 0;
         for (auto aoi_text : json->GetArrayField("AOIs"))
         {
             FAOI aoi;
+            aoi.id = last_id++;
             auto nameField = aoi_text->AsObject()->TryGetField("name");
-            if (nameField)
-                aoi.name = nameField->AsString();
+            if (nameField) 
+            {
+                auto name_str = nameField->AsString();
+                if (counts.Contains(name_str)) counts[name_str]++;
+                else counts.Add(name_str, 0);
+                aoi.name = FString::Printf(TEXT("%s_%i"), *name_str, counts[name_str]);
+            }
             auto pathField = aoi_text->AsObject()->TryGetField("path");
             if (pathField)
             {
