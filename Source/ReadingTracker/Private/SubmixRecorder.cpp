@@ -46,9 +46,7 @@ void USubmixRecorder::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 	{
 		OnRecordFinished();
 		bRecordFinished = true;
-		UE_LOG(LogTemp, Display, TEXT("On Record Finished"));
 	}
-	else UE_LOG(LogTemp, Display, TEXT("%i, %i"), RecordQueue.Count(), !!bIsRecording);
 }
 
 void USubmixRecorder::DestroyComponent(bool bPromoteChildren)

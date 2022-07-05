@@ -25,6 +25,7 @@ USTRUCT()
 struct FAOI
 {
 	GENERATED_BODY()
+	int id;
 	FString name;
 	UPROPERTY()
 	TArray<FVector2D> path;
