@@ -102,7 +102,9 @@ AReadingTrackerGameMode::AReadingTrackerGameMode(const FObjectInitializer& Objec
     PrimaryActorTick.bStartWithTickEnabled = true;
     PrimaryActorTick.bCanEverTick = true;
     static ConstructorHelpers::FClassFinder<UUserWidget> RecordingWidgetClass(TEXT("/Game/UI/UI_RecordVoice"));
+    static ConstructorHelpers::FClassFinder<UUserWidget> CreateListWidgetClass(TEXT("/Game/UI/UI_CreateList_Menu"));
     RecordingMenuClass = RecordingWidgetClass.Class;
+    CreateListButtonClass = CreateListWidgetClass.Class;
 }
 
 void AReadingTrackerGameMode::BeginPlay()
@@ -205,7 +207,6 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         params.Name = FName(TEXT("RecordingMenu"));
         recording_menu = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
         recording_menu->SetWidgetClass(RecordingMenuClass, FVector2D(1000.0f, 750.0f));
-        //recording_menu->SetActorHiddenInGame(true);//hide menu by default
         auto root = recording_menu->GetWidget();
         auto btnReady = Cast<UButton>(root->GetWidgetFromName(TEXT("btnReady")));
         btnReady->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::CreateListOfWords);
@@ -217,6 +218,17 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         btnRecord->OnReleased.AddDynamic(informant, &ABaseInformant::StopRecording);
         SetRecordingMenuVisibility(false);
     }
+    //spawn CreateList Button
+    {
+        FActorSpawnParameters params;
+        params.Name = FName(TEXT("CreateListButton"));
+        create_list_button = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
+        create_list_button->SetWidgetClass(CreateListButtonClass, FVector2D(500.0f, 75.0f));
+        auto root = create_list_button->GetWidget();
+        auto btn = Cast<UButton>(root->GetWidgetFromName(TEXT("btnCreateList")));
+        btn->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::CreateListBtn_OnClicked);
+    }
+
     //create walls(but they invisible)
     for (int i = 0; i < MaxWallsCount; i++)
     {
@@ -229,10 +241,61 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         wall->SetWallName(wall_name);
         walls.Add(wall);
     }
-    ReplaceWalls(510.0f);
+    ReplaceObjectsOnScene(510.0f);
     initWS();
 }
 
+void AReadingTrackerGameMode::ReplaceObjectsOnScene(float radius)
+{
+    auto& player_transform = informant->GetTransform();
+    float player_Z = player_transform.GetLocation().Z; //player_height
+    float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
+    //place stimulus in front of informant
+    stimulus->SetActorLocation(player_transform.GetLocation());
+    stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
+    stimulus->SetActorRotation(player_transform.GetRotation());
+    stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
+    //Place RecordingMenu
+    recording_menu->SetActorScale3D(FVector(0.15f));
+    recording_menu->SetActorLocation(player_transform.GetLocation());
+    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
+    recording_menu->SetActorRotation(player_transform.GetRotation());
+    recording_menu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
+    //Place CreateList Button
+    create_list_button->SetActorLocation(stimulus->GetActorLocation());
+    create_list_button->AddActorWorldOffset(FVector(0.0f, -10.0f, 345.0f));
+    create_list_button->SetActorRotation(FRotator(-10.0f, 270.0f, 0.0f));
+
+    //it gets a BBox considering an object's rotation
+    auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
+
+    int n = 12;//2 * MaxWallsCount - 2;
+    //place other walls around the informant
+    float angle_per_wall = 2.0f * PI / (float)n;
+    float angle = PI / 6.0f;
+    for (int i = 0; i < MaxWallsCount / 2; ++i, angle -= angle_per_wall)
+    {
+        float x_offset = FMath::Cos(angle) * radius;
+        float y_offset = FMath::Sin(angle) * radius + radius / 2.0f;
+        walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(x_offset, y_offset, -player_Z));
+        walls[2 * i]->SetActorRotation(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f));
+
+        walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-x_offset, y_offset, -player_Z));
+        walls[2 * i + 1]->SetActorRotation(FRotator(0.0f, -FMath::RadiansToDegrees(angle), 0.0f));
+    }
+
+    if (MaxWallsCount % 2 == 1)
+    {
+        int i = MaxWallsCount - 1;
+        walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0f, -radius / 2.0f, -player_Z));
+        walls[i]->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+    }
+
+    //So strange algorithm for placing the walls is for sorting the walls by remoteness from stimulus.
+    //Later you can just find first hidden wall(it will be nearest hidden wall to stimulus) and unhide it
+}
+
+//------------- Recording Menu -------------------
 void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
 {
     //replace recording menu according camera pos
@@ -242,8 +305,7 @@ void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
     recording_menu->SetActorLocation(player_transform.GetLocation());
     recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
 
-    recording_menu->SetActorHiddenInGame(!new_visibility);
-    recording_menu->SetActorEnableCollision(new_visibility);
+    recording_menu->SetVisibility(new_visibility);
     RecordingMenu_ClearNameForWall();
 }
 
@@ -254,6 +316,7 @@ void AReadingTrackerGameMode::RecordingMenu_ClearNameForWall()
     textBlock->SetText(FText::FromString(TEXT("")));
 }
 
+//------------- List of words -------------------
 void AReadingTrackerGameMode::CreateListOfWords()
 {
     auto root = recording_menu->GetWidget();
@@ -276,7 +339,7 @@ void AReadingTrackerGameMode::CreateListOfWords()
     SetRecordingMenuVisibility(false);
 
     if (visible_count == MaxWallsCount - 1)
-        stimulus->SetEnabled_CreateListButton(false);
+        create_list_button->SetEnabled(false);
 }
 
 void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
@@ -285,53 +348,7 @@ void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
     wall->SetActorEnableCollision(false);
     wall->ClearList();
     SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
-    stimulus->SetEnabled_CreateListButton(true);
-}
-
-void AReadingTrackerGameMode::ReplaceWalls(float radius)
-{
-    auto& player_transform = informant->GetTransform();
-    float player_Z = player_transform.GetLocation().Z; //player_height
-    float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
-    //place stimulus in front of informant
-    stimulus->SetActorLocation(player_transform.GetLocation());
-    stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
-    stimulus->SetActorRotation(player_transform.GetRotation());
-    stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
-    //Place RecordingMenu
-    recording_menu->SetActorScale3D(FVector(0.15f));
-    recording_menu->SetActorLocation(player_transform.GetLocation());
-    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
-    recording_menu->SetActorRotation(player_transform.GetRotation());
-    recording_menu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
-
-    //it gets a BBox considering an object's rotation
-    auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
-
-    int n = 12;//2 * MaxWallsCount - 2;
-    //place other walls around the informant
-    float angle_per_wall = 2.0f * PI / (float)n;
-    float angle = PI / 6.0f;
-    for (int i = 0; i < MaxWallsCount / 2; ++i, angle -= angle_per_wall)
-    {
-        float x_offset = FMath::Cos(angle) * radius;
-        float y_offset = FMath::Sin(angle) * radius + radius / 2.0f;
-        walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(x_offset, y_offset, -player_Z));
-        walls[2 * i]->SetActorRotation(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f));
-
-        walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-x_offset, y_offset, -player_Z));
-        walls[2 * i + 1]->SetActorRotation(FRotator(0.0f, -FMath::RadiansToDegrees(angle), 0.0f));
-    }   
-
-    if (MaxWallsCount % 2 == 1)
-    {
-        int i = MaxWallsCount - 1;
-        walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0f, -radius / 2.0f, -player_Z));
-        walls[i]->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
-    }
-
-    //So strange algorithm for placing the walls is for sorting the walls by remoteness from stimulus.
-    //Later you can just find first hidden wall(it will be nearest hidden wall to stimulus) and unhide it
+    create_list_button->SetEnabled(true);
 }
 
 void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
@@ -345,35 +362,13 @@ void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
     stimulus->ClearSelectedAOIs();  
 }
 
-// ---------------------- VR ------------------------
-
-void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI)
+//----------- CreateList Button ------------
+void AReadingTrackerGameMode::CreateListBtn_OnClicked()
 {
-    FString msg;
-    FString ActionStr;
-    switch (Action)
-    {
-    case EWallLogAction::NewWall: ActionStr = TEXT("NewWall"); break;
-    case EWallLogAction::DeleteWall: ActionStr = TEXT("DeleteWall"); break;
-    case EWallLogAction::AddAOI: ActionStr = TEXT("AddAOI"); break;
-    case EWallLogAction::RemoveAOI: ActionStr = TEXT("RemoveAOI"); break;
-        default: ActionStr = TEXT("UnknownAction"); break;
-    }
-    if (Action == EWallLogAction::NewWall || Action == EWallLogAction::DeleteWall) 
-    {
-        msg = FString::Printf(TEXT("\"WallLog\": {"
-            "\"Action\": \"%s\","
-            "\"Wall\": \"%s\"}"), *ActionStr, *WallName);
-    }
-    else
-    {
-        msg = FString::Printf(TEXT("\"WallLog\": {"
-            "\"Action\": \"%s\","
-            "\"Wall\": \"%s\","
-            "\"AOI\": \"%s\"}"), *ActionStr, *WallName, *AOI);
-    }
-    this->Broadcast(msg);
+    SetRecordingMenuVisibility(true);
 }
+
+// ---------------------- VR ------------------------
 
 void AReadingTrackerGameMode::CalibrateVR()
 {
@@ -471,7 +466,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
             AOIs.Add(aoi);
         }
         if (texture)
-            stimulus->updateDynTex(texture, sx, sy, AOIs);
+            stimulus->UpdateStimulus(texture, sx, sy, AOIs);
     }
 }
 
@@ -482,4 +477,48 @@ void AReadingTrackerGameMode::Broadcast(FString& message)
     auto msg = FString::Printf(TEXT("{\"Time\": %f, %s}"), time, *message);
     for (auto& connection : m_server.get_connections())//broadcast to everyone
         connection->send(TCHAR_TO_UTF8(*msg));
+}
+
+void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI)
+{
+    FString msg;
+    FString ActionStr;
+    switch (Action)
+    {
+    case EWallLogAction::NewWall: ActionStr = TEXT("NewWall"); break;
+    case EWallLogAction::DeleteWall: ActionStr = TEXT("DeleteWall"); break;
+    case EWallLogAction::AddAOI: ActionStr = TEXT("AddAOI"); break;
+    case EWallLogAction::RemoveAOI: ActionStr = TEXT("RemoveAOI"); break;
+    default: ActionStr = TEXT("UnknownAction"); break;
+    }
+    if (Action == EWallLogAction::NewWall || Action == EWallLogAction::DeleteWall)
+    {
+        msg = FString::Printf(TEXT("\"WallLog\": {"
+            "\"Action\": \"%s\","
+            "\"Wall\": \"%s\"}"), *ActionStr, *WallName);
+    }
+    else
+    {
+        msg = FString::Printf(TEXT("\"WallLog\": {"
+            "\"Action\": \"%s\","
+            "\"Wall\": \"%s\","
+            "\"AOI\": \"%s\"}"), *ActionStr, *WallName, *AOI);
+    }
+    Broadcast(msg);
+}
+
+void AReadingTrackerGameMode::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id)
+{
+    //Send message to scivi
+    auto json = FString::Printf(TEXT("\"Gaze\": {\"uv\": [%f, %f],"
+        "\"origin\": [%f, %f, %f],"
+        "\"direction\": [%F, %F, %F],"
+        "\"lpdmm\": %F, \"rpdmm\": %F,"
+        "\"cf\": %F, \"AOI_index\": %i,"
+        "\"Action\": \"%s\"}"),
+        uv.X, uv.Y,
+        gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
+        gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
+        gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, *Id);
+    Broadcast(json);
 }

@@ -23,11 +23,10 @@ public:
     //----------------- API ---------------------
     AStimulus();
     virtual void BeginPlay() override;
-    void updateDynTex(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs);
+    void UpdateStimulus(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs);
     void BindInformant(class ABaseInformant* _informant);
     void UpdateContours();
     void ClearSelectedAOIs();
-    void SetEnabled_CreateListButton(bool enabled);
 
     // ----------------- Input events -------------------
     void OnInFocus(const struct FGaze& gaze, const FHitResult& hitPoint);
@@ -38,8 +37,6 @@ public:
     TArray<FAOI> AOIs;
     TArray<const FAOI*> SelectedAOIs;
 
-    //UFUNCTION(BlueprintCallable)
-    //void trigger(bool isPressed);
     UFUNCTION(BlueprintCallable)
     void customCalibrate();
 
@@ -52,14 +49,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Wall)
     class UStaticMeshComponent* wall;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=UI)
-    class UWidgetComponent* CreateListButton;
     //----------------- Private API -----------------
 protected:
-    UFUNCTION()
-    void OnClicked_CreateList();
-    void SendGazeToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id);
-
     FVector billboardToScene(const FVector2D& pos) const;
     FVector2D sceneToBillboard(const FVector& pos) const;
 

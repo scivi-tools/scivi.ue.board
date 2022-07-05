@@ -48,7 +48,6 @@ int signum(float a, float b)
 {
     return FGenericPlatformMath::IsNaN(a) || FGenericPlatformMath::IsNaN(b) || fabs(a - b) < EPSILON ? 0 : a - b > 0.0f ? 1 : -1;
 };
-
 FVector2D posForIdx(int idx)
 {
     /*if ((idx / POINTS_PER_ROW) % 2)
@@ -86,14 +85,6 @@ AStimulus::AStimulus()
     Stimulus->SetRelativeLocation(FVector(10.0f, 0.0f, 150.0f));
     Stimulus->SetUsingAbsoluteScale(true);
     Stimulus->SetCollisionResponseToChannel(Stimulus_Channel, ECollisionResponse::ECR_Block);
-
-    CreateListButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("CreateListButton"));
-    CreateListButton->SetupAttachment(RootComponent);
-    CreateListButton->SetWidgetClass(CreateListWidgetClass.Class);
-    CreateListButton->SetDrawSize(FVector2D(500.0f, 75.0f));
-    CreateListButton->SetUsingAbsoluteScale(true);
-    CreateListButton->SetRelativeLocation(FVector(10.0f, 0.0f, 340.0f));
-    CreateListButton->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
     
     m_calibIndex = 0;
     m_needsCustomCalib = false;
@@ -120,14 +111,9 @@ void AStimulus::BeginPlay()
     image_widget->SetBrushFromMaterial(m_dynMat);
     m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
     m_staticTransform = Stimulus->GetRelativeTransform();
-    
-    //set onClick event on createListButton
-    auto btn = Cast<UButton>(CreateListButton->GetWidget()->GetWidgetFromName(TEXT("btnCreateList")));
-    if (btn)
-        btn->OnClicked.AddDynamic(this, &AStimulus::OnClicked_CreateList);
 }
 
-void AStimulus::updateDynTex(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs)
+void AStimulus::UpdateStimulus(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs)
 {
     int margin = 20.0f;
     AOIs = newAOIs;
@@ -148,13 +134,12 @@ void AStimulus::updateDynTex(UTexture2D* texture, float sx, float sy, const TArr
     m_dynMat->SetTextureParameterValue(TEXT("DynTex"), (UTexture*)image);
     m_dynContour->ResizeTarget(image_size.X, image_size.Y);
     m_dynContour->UpdateResource();//to clear contour
-    CreateListButton->SetRelativeLocation(FVector(10.0f, 0.0, wall_scale.Z * 100.0f + 40.0f));
 
     m_staticTransform = Stimulus->GetRelativeTransform();
     m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
     OnImageUpdated();   
     auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    GM->ReplaceWalls(500.0f);
+    GM->ReplaceObjectsOnScene(500.0f);
 }
 
 void AStimulus::BindInformant(ABaseInformant* _informant)
@@ -185,27 +170,22 @@ void AStimulus::ClearSelectedAOIs()
     for (auto selected_aoi : SelectedAOIs) 
     {
         int aoi_index = selected_aoi - AOIs.GetData();
-        SendGazeToSciVi(gaze, uv, aoi_index, TEXT("SELECT"));//this unselect selected in sciVi
+        GM->SendGazeToSciVi(gaze, uv, aoi_index, TEXT("SELECT"));//this unselect selected in sciVi
     }
     SelectedAOIs.Empty();
     UpdateContours();
-}
-
-void AStimulus::SetEnabled_CreateListButton(bool enabled)
-{
-    auto btn = Cast<UButton>(CreateListButton->GetWidget()->GetWidgetFromName(TEXT("btnCreateList")));
-    btn->SetIsEnabled(enabled);
 }
 
 void AStimulus::OnInFocus(const FGaze& gaze, const FHitResult& hitPoint)
 {
     if (hitPoint.Component == Stimulus)
     {
+        auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
         FVector2D uv = sceneToBillboard(hitPoint.Location);
         int currentAOIIndex = -1;
         if (!informant->MC_Right->bHiddenInGame)
             auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
-        SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
+        GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
     }
 }
 
@@ -263,17 +243,18 @@ void AStimulus::OnTriggerReleased(const FHitResult& hitPoint)
         informant->GetGaze(gaze);
         auto m_laser = sceneToBillboard(hitPoint.Location);
         int currentAOIIndex = -1;
+        auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
         if (!informant->MC_Right->bHiddenInGame)
         {
             auto selectedAOI = findAOI(FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), currentAOIIndex);
             if (selectedAOI)
             {
                 toggleSelectedAOI(selectedAOI);
-                SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
+                GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
             }
         }
         UpdateContours();
-        SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
+        GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
     }
 }
 
@@ -294,7 +275,7 @@ void AStimulus::OnImageUpdated()
             int currentAOIIndex = -1;
             if (!informant->MC_Right->bHiddenInGame)
                 auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
-            SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("IMG_UP"));
+            GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("IMG_UP"));
         }
     }
 }
@@ -304,7 +285,9 @@ void AStimulus::customCalibrate()
     m_needsCustomCalib = true;
 }
 
-//----------------------- Draw functions --------------------
+//------------------------------ Private API --------------------------------
+
+//------------ Draw functions ------------
 
 void AStimulus::toggleSelectedAOI(const FAOI* aoi)
 {
@@ -361,29 +344,6 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
 
     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
         fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * image->GetSizeX(), m_customCalibTarget.location.Y * image->GetSizeY()), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
-}
-
-void AStimulus::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const TCHAR* Id)
-{
-    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    //Send message to scivi
-    auto json = FString::Printf(TEXT("\"Gaze\": {\"uv\": [%f, %f]," 
-                                    "\"origin\": [%f, %f, %f],"
-                                    "\"direction\": [%F, %F, %F],"
-                                    "\"lpdmm\": %F, \"rpdmm\": %F,"
-                                    "\"cf\": %F, \"AOI_index\": %i,"
-                                    "\"Action\": \"%s\"}"),
-        uv.X, uv.Y,
-        gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
-        gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
-        gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, Id);
-    GM->Broadcast(json);
-}
-
-void AStimulus::OnClicked_CreateList()
-{
-    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    GM->SetRecordingMenuVisibility(true);
 }
 
 //used only in calibration

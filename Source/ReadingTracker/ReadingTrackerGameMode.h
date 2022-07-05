@@ -83,7 +83,7 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void CreateListOfWords();
 	UFUNCTION(BlueprintCallable)
-	void ReplaceWalls(float stimulus_remoteness);
+	void ReplaceObjectsOnScene(float stimulus_remoteness);
 	void AddAOIsToList(AWordListWall* const wall);
 	UFUNCTION(BlueprintCallable)
 	void DeleteList(AWordListWall* const wall);
@@ -94,6 +94,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	TSubclassOf<UUserWidget> RecordingMenuClass;
+	UPROPERTY(EditAnywhere, BlueprintReadonly)
+	TSubclassOf<UUserWidget> CreateListButtonClass;
 protected:
 	UPROPERTY()
 	class AStimulus* stimulus;
@@ -102,9 +104,12 @@ protected:
 	UPROPERTY()
 	class AUI_Blank* recording_menu;
 	UPROPERTY()
+	class AUI_Blank* create_list_button;
+	UPROPERTY()
 	TArray<class AWordListWall*> walls;
-	bool direction_of_search = false;
 	int created_walls_count = 0;
+	UFUNCTION()
+	void CreateListBtn_OnClicked();
 	
 
 	//------------------- VR ----------------------
@@ -117,6 +122,7 @@ public:
 //----------------------- SciVi networking --------------
 public:
 	void SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI = TEXT(""));
+	void SendGazeToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id);
 	void Broadcast(FString& message);
 protected:
 	using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
@@ -124,6 +130,6 @@ protected:
 	void wsRun() { m_server.start(); }
 	void ParseNewImage(const TSharedPtr<FJsonObject>& json);
 	WSServer m_server;
-	TUniquePtr<std::thread> m_serverThread = nullptr;//you can't use std::thread in UE4, because ue4 can't destroy it then gave is exiting
+	TUniquePtr<std::thread> m_serverThread = nullptr;//you can't use std::thread in UE4, because ue4 can't destroy it then game is exiting
 	TQueue<FString> message_queue;
 };
