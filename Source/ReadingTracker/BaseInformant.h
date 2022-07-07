@@ -70,9 +70,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	class USubmixRecorder* RecorderComponent;
 
-	bool SciVi_MCLeft_Visibility = false;
-	bool SciVi_MCRight_Visibility = false;
-
 protected:
 	UFUNCTION()
 	void OnRTriggerPressed();

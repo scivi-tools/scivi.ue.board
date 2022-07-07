@@ -137,9 +137,7 @@ void AStimulus::UpdateStimulus(UTexture2D* texture, float sx, float sy, const TA
 
     m_staticTransform = Stimulus->GetRelativeTransform();
     m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
-    OnImageUpdated();   
-    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-    GM->ReplaceObjectsOnScene(500.0f);
+    OnImageUpdated();
 }
 
 void AStimulus::BindInformant(ABaseInformant* _informant)

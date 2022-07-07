@@ -68,16 +68,20 @@ void AWordListWall::SetVisibility(bool is_visible)
 {
 	bHiddenInGame = !is_visible;
 	SetActorHiddenInGame(bHiddenInGame);
+	SetActorEnableCollision(is_visible);
 }
 
 void AWordListWall::SetWallName(const FString& new_name)
 {
-	auto txtName = Cast<UTextBlock>(ListHeader->GetWidget()->GetWidgetFromName(TEXT("txtWallName")));
-	if (txtName) 
+	if (IsValid(ListHeader) && IsValid(ListHeader->GetWidget())) 
 	{
-		ListHeader->SetDrawSize(FVector2D(FMath::Max(250.0f, new_name.Len() * 25.0f), 100.0f));
-		txtName->SetText(FText::FromString(new_name));
-		name = new_name;
+		auto txtName = Cast<UTextBlock>(ListHeader->GetWidget()->GetWidgetFromName(TEXT("txtWallName")));
+		if (IsValid(txtName))
+		{
+			ListHeader->SetDrawSize(FVector2D(FMath::Max(250.0f, new_name.Len() * 25.0f), 100.0f));
+			txtName->SetText(FText::FromString(new_name));
+			name = new_name;
+		}
 	}
 }
 
@@ -87,11 +91,6 @@ void AWordListWall::AddAOI(const FAOI* aoi)
 	auto entry_name = FName(aoi->name + TEXT("_Entry"));
 	//if list doesnt contains an entry then insert
 	auto childs = list->GetAllChildren();
-	/*UE_LOG(LogTemp, Display, TEXT("add aoi begin"));
-	for (auto child : childs)
-	{
-		UE_LOG(LogTemp, Display, TEXT("%s"), *child->GetFName().ToString());
-	}*/
 
 	if (IsValid(aoi->image) &&
 		!list->GetAllChildren().ContainsByPredicate([entry_name](UWidget* widget) {return widget->GetFName() == entry_name; }))
@@ -112,9 +111,18 @@ void AWordListWall::AddAOI(const FAOI* aoi)
 
 void AWordListWall::ClearList()
 {
-	auto list = Cast<UScrollBox>(List->GetWidget()->GetWidgetFromName(TEXT("List")));
-	list->ClearChildren();
-	entries.Empty();
+	if (IsValid(List) && IsValid(List->GetWidget()))
+	{
+		auto w = List->GetWidget();
+		auto l = w->GetWidgetFromName(TEXT("List"));
+		auto list = Cast<UScrollBox>(l);
+		if (IsValid(list))
+		{
+			list->ClearChildren();
+			entries.Empty();
+		}
+		UE_LOG(LogTemp, Display, TEXT("List %s cleared"), *name);
+	}
 }
 
 void AWordListWall::OnClicked_DeleteList()

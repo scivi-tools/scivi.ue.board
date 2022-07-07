@@ -5,6 +5,7 @@
 #include "Stimulus.h"
 #include "BaseInformant.h"
 #include "Private/UI_Blank.h"
+#include "Private/ExperimentStepBase.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
 #include "Components/WidgetComponent.h"
@@ -16,6 +17,7 @@
 #include "Misc/Base64.h"
 #include "SRanipalEye_Framework.h"
 #include "SRanipal_API_Eye.h"
+
 
 UTexture2D* loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt)
 {
@@ -84,8 +86,8 @@ void CopyTexture2DFragment(UTexture2D* destination, const UTexture2D* source, in
     auto &src_bulk = source->PlatformData->Mips[0].BulkData;
     auto &dst_bulk = destination->PlatformData->Mips[0].BulkData;
 
-    auto src_pixels = static_cast<const FColor*>(src_bulk.LockReadOnly());
-    auto dst_pixels = static_cast<FColor*>(dst_bulk.Lock(LOCK_READ_WRITE));
+    auto src_pixels = reinterpret_cast<const FColor*>(src_bulk.LockReadOnly());
+    auto dst_pixels = reinterpret_cast<FColor*>(dst_bulk.Lock(LOCK_READ_WRITE));
     for (int y = 0; y < height; ++y)
         FMemory::Memcpy(dst_pixels + y * destination->GetSizeX(),
                     src_pixels + (y + start_y) * source->GetSizeX() + start_x,
@@ -103,8 +105,10 @@ AReadingTrackerGameMode::AReadingTrackerGameMode(const FObjectInitializer& Objec
     PrimaryActorTick.bCanEverTick = true;
     static ConstructorHelpers::FClassFinder<UUserWidget> RecordingWidgetClass(TEXT("/Game/UI/UI_RecordVoice"));
     static ConstructorHelpers::FClassFinder<UUserWidget> CreateListWidgetClass(TEXT("/Game/UI/UI_CreateList_Menu"));
+    static ConstructorHelpers::FClassFinder<AExperimentStepBase> NullStepClass(TEXT("/Game/Steps/NullStep"));
     RecordingMenuClass = RecordingWidgetClass.Class;
     CreateListButtonClass = CreateListWidgetClass.Class;
+    experiment_step_classes.Add(TEXT("NullStep"), NullStepClass.Class);
 }
 
 void AReadingTrackerGameMode::BeginPlay()
@@ -132,17 +136,17 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
             }
             else if (jsonParsed->TryGetField("customCalibrate"))
                 stimulus->customCalibrate();
-            else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
-            {
-                auto PC = GetWorld()->GetFirstPlayerController();
-                bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
-                //informant->SciVi_MCLeft_Visibility = visibility;
-                informant->SciVi_MCRight_Visibility = visibility;
-            }
+            //else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
+            //{
+            //    auto PC = GetWorld()->GetFirstPlayerController();
+            //    bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
+            //    //informant->SciVi_MCLeft_Visibility = visibility;
+            //    informant->SciVi_MCRight_Visibility = visibility;
+            //}
             else if (jsonParsed->TryGetField("Speech"))
             {
-                auto speech = jsonParsed->GetStringField("Speech");
-                auto root = recording_menu->GetWidget();
+                auto speech = jsonParsed->GetStringField(TEXT("Speech"));
+                auto root = uiRecordingMenu->GetWidget();
                 auto textWidget = Cast<UEditableText>(root->GetWidgetFromName("textNewName"));
                 if (textWidget)
                 {
@@ -151,14 +155,32 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
                     textWidget->SetText(FText::FromString(name));
                 }
             }
+            else if (jsonParsed->TryGetField(TEXT("setExperimentStep")))
+            {
+                auto step_name = jsonParsed->GetStringField(TEXT("setExperimentStep"));
+                if (experiment_step_classes.Contains(step_name))
+                {
+                    if (IsValid(current_experiment_step)) 
+                    {
+                        GetWorld()->RemoveActor(current_experiment_step, true);
+                        current_experiment_step->Destroy();//it calls end play and quit step
+                    }
+                    auto &step_class = experiment_step_classes[step_name];
+                    FActorSpawnParameters params;
+                    params.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+                    params.Name = FName(FString::Printf(TEXT("ExperimentStep_%s"), *step_name));
+                    current_experiment_step = GetWorld()->SpawnActor<AExperimentStepBase>(step_class, params);//it calls begin play event and starts step
+                }
+                else UE_LOG(LogGameMode, Warning, TEXT("New phase with unknown name"));
+            }
             else {
                 for (auto wall : walls) 
                 {
                     wall->SetVisibility(false);
-                    wall->SetActorEnableCollision(false);
                     wall->ClearList();
                 }
                 ParseNewImage(jsonParsed);
+                ReplaceObjectsOnScene(StimulusRemoteness);
             }
         }
 
@@ -207,11 +229,11 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
     {
         FActorSpawnParameters params;
         params.Name = FName(TEXT("RecordingMenu"));
-        recording_menu = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
-        recording_menu->SetWidgetClass(RecordingMenuClass, FVector2D(1000.0f, 750.0f));
-        auto root = recording_menu->GetWidget();
+        uiRecordingMenu = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
+        uiRecordingMenu->SetWidgetClass(RecordingMenuClass, FVector2D(1000.0f, 750.0f));
+        auto root = uiRecordingMenu->GetWidget();
         auto btnReady = Cast<UButton>(root->GetWidgetFromName(TEXT("btnReady")));
-        btnReady->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::CreateListOfWords);
+        btnReady->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::RecordingMenu_CreateList);
         auto btnClear = Cast<UButton>(root->GetWidgetFromName(TEXT("btnClear")));
         btnClear->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::RecordingMenu_ClearNameForWall);
 
@@ -224,9 +246,9 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
     {
         FActorSpawnParameters params;
         params.Name = FName(TEXT("CreateListButton"));
-        create_list_button = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
-        create_list_button->SetWidgetClass(CreateListButtonClass, FVector2D(500.0f, 75.0f));
-        auto root = create_list_button->GetWidget();
+        uiCreateListButton = GetWorld()->SpawnActor<AUI_Blank>(AUI_Blank::StaticClass(), params);
+        uiCreateListButton->SetWidgetClass(CreateListButtonClass, FVector2D(500.0f, 75.0f));
+        auto root = uiCreateListButton->GetWidget();
         auto btn = Cast<UButton>(root->GetWidgetFromName(TEXT("btnCreateList")));
         btn->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::CreateListBtn_OnClicked);
     }
@@ -243,7 +265,7 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         wall->SetWallName(wall_name);
         walls.Add(wall);
     }
-    ReplaceObjectsOnScene(510.0f);
+    ReplaceObjectsOnScene(StimulusRemoteness);
     initWS();
 }
 
@@ -258,15 +280,15 @@ void AReadingTrackerGameMode::ReplaceObjectsOnScene(float radius)
     stimulus->SetActorRotation(player_transform.GetRotation());
     stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
     //Place RecordingMenu
-    recording_menu->SetActorScale3D(FVector(0.15f));
-    recording_menu->SetActorLocation(player_transform.GetLocation());
-    recording_menu->AddActorWorldOffset(FVector(0.0f, 100.0f, camera_Z - player_Z));
-    recording_menu->SetActorRotation(player_transform.GetRotation());
-    recording_menu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
+    uiRecordingMenu->SetActorScale3D(FVector(0.15f));
+    uiRecordingMenu->SetActorLocation(player_transform.GetLocation());
+    uiRecordingMenu->AddActorWorldOffset(FVector(0.0f, RecordingMenuRemoteness, camera_Z - player_Z));
+    uiRecordingMenu->SetActorRotation(player_transform.GetRotation());
+    uiRecordingMenu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
     //Place CreateList Button
-    create_list_button->SetActorLocation(stimulus->GetActorLocation());
-    create_list_button->AddActorWorldOffset(FVector(0.0f, -10.0f, 345.0f));
-    create_list_button->SetActorRotation(FRotator(-10.0f, 270.0f, 0.0f));
+    uiCreateListButton->SetActorLocation(stimulus->GetActorLocation());
+    uiCreateListButton->AddActorWorldOffset(FVector(0.0f, -10.0f, 345.0f));
+    uiCreateListButton->SetActorRotation(FRotator(-10.0f, 270.0f, 0.0f));
 
     //it gets a BBox considering an object's rotation
     auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
@@ -304,34 +326,36 @@ void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
     auto& player_transform = informant->GetTransform();
     float player_Z = player_transform.GetLocation().Z; //player_height
     float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
-    recording_menu->SetActorLocation(player_transform.GetLocation());
-    recording_menu->AddActorWorldOffset(FVector(0.0f, 170.0f, camera_Z - player_Z));
+    uiRecordingMenu->SetActorLocation(player_transform.GetLocation());
+    uiRecordingMenu->AddActorWorldOffset(FVector(0.0f, RecordingMenuRemoteness, camera_Z - player_Z));
 
-    recording_menu->SetVisibility(new_visibility);
+    uiRecordingMenu->SetVisibility(new_visibility);
     RecordingMenu_ClearNameForWall();
 }
 
 void AReadingTrackerGameMode::RecordingMenu_ClearNameForWall()
 {
-    auto root = recording_menu->GetWidget();
+    auto root = uiRecordingMenu->GetWidget();
     auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
     textBlock->SetText(FText::FromString(TEXT("")));
 }
 
-//------------- List of words -------------------
-void AReadingTrackerGameMode::CreateListOfWords()
+void AReadingTrackerGameMode::RecordingMenu_CreateList()
 {
-    auto root = recording_menu->GetWidget();
+    auto root = uiRecordingMenu->GetWidget();
     auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
-    auto wall_name = textBlock->GetText().ToString();
+    CreateListOfWords(textBlock->GetText().ToString());
+}
 
+//------------- List of words -------------------
+void AReadingTrackerGameMode::CreateListOfWords(const FString& wall_name)
+{
     int visible_count = 0;
     for (auto wall : walls)
     {
         if (wall->IsHiddenInGame())
         {
             wall->SetVisibility(true);
-            wall->SetActorEnableCollision(true);
             wall->SetWallName(wall_name);
             SendWallLogToSciVi(EWallLogAction::NewWall, wall_name);
             break;
@@ -341,16 +365,25 @@ void AReadingTrackerGameMode::CreateListOfWords()
     SetRecordingMenuVisibility(false);
 
     if (visible_count == MaxWallsCount - 1)
-        create_list_button->SetEnabled(false);
+        uiCreateListButton->SetEnabled(false);
 }
 
 void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
 {
-    wall->SetVisibility(false);
-    wall->SetActorEnableCollision(false);
-    wall->ClearList();
-    SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
-    create_list_button->SetEnabled(true);
+    if (IsValid(wall))
+    {
+        wall->SetVisibility(false);
+        wall->ClearList();
+        SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
+        uiCreateListButton->SetEnabled(true);
+    }
+}
+
+void AReadingTrackerGameMode::DeleteAllLists()
+{
+    for (auto wall : walls)
+        if (!wall->IsHiddenInGame())
+            DeleteList(wall);
 }
 
 void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
@@ -441,7 +474,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
         TArray<FAOI> AOIs;
         TMap<FString, int> counts;
         int last_id = 0;
-        for (auto aoi_text : json->GetArrayField("AOIs"))
+        for (auto &aoi_text : json->GetArrayField("AOIs"))
         {
             FAOI aoi;
             aoi.id = last_id++;
@@ -456,14 +489,14 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
             auto pathField = aoi_text->AsObject()->TryGetField("path");
             if (pathField)
             {
-                auto path = pathField->AsArray();
-                for (auto point : path)
+                auto &path = pathField->AsArray();
+                for (auto &point : path)
                     aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
             }
             auto bboxField = aoi_text->AsObject()->TryGetField("bbox");
             if (bboxField)
             {
-                auto bbox = bboxField->AsArray();
+                auto &bbox = bboxField->AsArray();
                 aoi.bbox = FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
                     FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber()));
             }

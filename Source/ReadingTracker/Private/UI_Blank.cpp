@@ -25,9 +25,12 @@ UUserWidget* AUI_Blank::GetWidget()
 
 void AUI_Blank::SetEnabled(bool enabled)
 {
-	auto root = WidgetComponent->GetWidget()->GetRootWidget();
-	if (IsValid(root))
-		root->SetIsEnabled(enabled);
+	if (IsValid(WidgetComponent->GetWidget())) 
+	{
+		auto root = WidgetComponent->GetWidget()->GetRootWidget();
+		if (IsValid(root))
+			root->SetIsEnabled(enabled);
+	}
 }
 
 void AUI_Blank::SetVisibility(bool visibility)

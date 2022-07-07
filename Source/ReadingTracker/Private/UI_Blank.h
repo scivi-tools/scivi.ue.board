@@ -17,7 +17,9 @@ public:
 	AUI_Blank();
 	void SetWidgetClass(TSubclassOf<UUserWidget> widget_class, const FVector2D& draw_size);
 	UUserWidget* GetWidget();
+	UFUNCTION(BlueprintCallable)
 	void SetEnabled(bool enabled);
+	UFUNCTION(BlueprintCallable)
 	void SetVisibility(bool visibility);
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)

@@ -73,8 +73,6 @@ void ABaseInformant::BeginPlay()
 {
 	Super::BeginPlay();
 	UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Floor);
-	SetVisibility_MC_Right(false);
-	SetVisibility_MC_Left(false);
 
 	if (!RecorderComponent->SubmixToRecord) 
 	{
@@ -142,11 +140,6 @@ void ABaseInformant::Tick(float DeltaTime)
 		if (focusedStimulus)
 			focusedStimulus->OnInFocus(gaze, hitPoint);
 	}
-
-	if (MC_Left->IsTracked() && SciVi_MCLeft_Visibility == MC_Left->bHiddenInGame)
-		SetVisibility_MC_Left(SciVi_MCLeft_Visibility);
-	if (MC_Right->IsTracked() && SciVi_MCRight_Visibility == MC_Right->bHiddenInGame)
-		SetVisibility_MC_Right(SciVi_MCRight_Visibility);
 }
 
 // Called to bind functionality to input
@@ -223,6 +216,9 @@ void ABaseInformant::SetVisibility_MC_Right(bool visibility)
 		else
 			MC_Right_Interaction_Lazer->Deactivate();
 	}
+	else
+		UE_LOG(LogPlayerController, Warning, TEXT("Something in MCRight is ot valid %i, %i, %i"),
+			IsValid(MC_Right), IsValid(MC_Right_Mesh), IsValid(MC_Right_Interaction_Lazer));
 }
 
 void ABaseInformant::SetVisibility_MC_Left(bool visibility)
@@ -236,6 +232,9 @@ void ABaseInformant::SetVisibility_MC_Left(bool visibility)
 		else
 			MC_Left_Interaction_Lazer->Deactivate();
 	}
+	else
+		UE_LOG(LogPlayerController, Warning, TEXT("Something in MCLeft is ot valid %i, %i, %i"),
+			IsValid(MC_Left), IsValid(MC_Left_Mesh), IsValid(MC_Left_Interaction_Lazer));
 }
 
 void ABaseInformant::GetGaze(FGaze& gaze) const

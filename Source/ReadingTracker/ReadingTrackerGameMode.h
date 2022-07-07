@@ -79,38 +79,55 @@ public:
 
 	//----------------- Scene ----------------------
 public:
+	UPROPERTY(EditAnywhere, BlueprintReadwrite)
+	float StimulusRemoteness = 510.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadwrite)
+	float RecordingMenuRemoteness = 170.0f;
+
 	void NotifyInformantSpawned(class ABaseInformant* _informant);
 	
 	UFUNCTION(BlueprintCallable)
-	void CreateListOfWords();
+	void CreateListOfWords(const FString& wall_name);
 	UFUNCTION(BlueprintCallable)
 	void ReplaceObjectsOnScene(float stimulus_remoteness);
-	void AddAOIsToList(AWordListWall* const wall);
 	UFUNCTION(BlueprintCallable)
 	void DeleteList(AWordListWall* const wall);
-	void SetRecordingMenuVisibility(bool new_visibility);
-	UFUNCTION()
-	void RecordingMenu_ClearNameForWall();
+	UFUNCTION(BlueprintCallable)
+	void DeleteAllLists();
 	
+	void AddAOIsToList(AWordListWall* const wall);
+
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	TSubclassOf<UUserWidget> RecordingMenuClass;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	TSubclassOf<UUserWidget> CreateListButtonClass;
+	UPROPERTY(EditAnywhere, BlueprintReadwrite)
+	TMap<FString, TSubclassOf<class AExperimentStepBase>> experiment_step_classes;
+
+
+	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "Stimulus")
+	class AStimulus* stimulus;
+	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "Informant")
+	class ABaseInformant* informant;
+	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "RecordingMenu")
+	class AUI_Blank* uiRecordingMenu;
+	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName="CreateListButton")
+	class AUI_Blank* uiCreateListButton;
+	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "Walls")
+	TArray<class AWordListWall*> walls;
+
 protected:
 	UPROPERTY()
-	class AStimulus* stimulus;
-	UPROPERTY()
-	class ABaseInformant* informant;
-	UPROPERTY()
-	class AUI_Blank* recording_menu;
-	UPROPERTY()
-	class AUI_Blank* create_list_button;
-	UPROPERTY()
-	TArray<class AWordListWall*> walls;
+	class AExperimentStepBase* current_experiment_step = nullptr;
 	int created_walls_count = 0;
 	UFUNCTION()
 	void CreateListBtn_OnClicked();
+	UFUNCTION()
+	void RecordingMenu_ClearNameForWall();
+	UFUNCTION()
+	void RecordingMenu_CreateList();
+	void SetRecordingMenuVisibility(bool new_visibility);
 	
 
 	//------------------- VR ----------------------

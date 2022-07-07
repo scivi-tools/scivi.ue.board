@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "AudioDevice.h"
-#include "StaticSampleBuffer.h"
 #include "SubmixRecorder.generated.h"
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
