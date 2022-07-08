@@ -113,9 +113,7 @@ void AWordListWall::ClearList()
 {
 	if (IsValid(List) && IsValid(List->GetWidget()))
 	{
-		auto w = List->GetWidget();
-		auto l = w->GetWidgetFromName(TEXT("List"));
-		auto list = Cast<UScrollBox>(l);
+		auto list = Cast<UScrollBox>(List->GetWidget()->GetWidgetFromName(TEXT("List")));
 		if (IsValid(list))
 		{
 			list->ClearChildren();

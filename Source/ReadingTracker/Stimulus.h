@@ -23,16 +23,21 @@ public:
     //----------------- API ---------------------
     AStimulus();
     virtual void BeginPlay() override;
-    void UpdateStimulus(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs);
+    void UpdateStimulus(const UTexture2D* texture, float sx = 1.0f, float sy = 1.0f, 
+                        const TArray<FAOI>& newAOIs = TArray<FAOI>(), bool notify_scivi = false);
     void BindInformant(class ABaseInformant* _informant);
     void UpdateContours();
     void ClearSelectedAOIs();
+    UFUNCTION(BlueprintCallable)
+    void Reset();
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float StimulusMargin = 20.0f;
 
     // ----------------- Input events -------------------
     void OnInFocus(const struct FGaze& gaze, const FHitResult& hitPoint);
     void OnTriggerPressed(const FHitResult& hitPoint);
     void OnTriggerReleased(const FHitResult& hitPoint);
-    void OnImageUpdated();
+    void NotifyScivi_ImageUpdated();
 
     TArray<FAOI> AOIs;
     TArray<const FAOI*> SelectedAOIs;
@@ -48,6 +53,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Wall)
     class UStaticMeshComponent* wall;
+
+    UPROPERTY(EditAnywhere, BlueprintReadonly)
+    const UTexture2D* DefaultTexture;
 
     //----------------- Private API -----------------
 protected:
@@ -75,6 +83,7 @@ protected:
     class UCanvasRenderTarget2D* m_dynContour = nullptr;
     UPROPERTY()
     const UTexture2D* image;
+    
     
 
 #ifdef EYE_DEBUG

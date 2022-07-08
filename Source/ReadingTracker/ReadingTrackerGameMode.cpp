@@ -179,8 +179,8 @@ void AReadingTrackerGameMode::Tick(float DeltaTime)
                     wall->SetVisibility(false);
                     wall->ClearList();
                 }
-                ParseNewImage(jsonParsed);
                 ReplaceObjectsOnScene(StimulusRemoteness);
+                ParseNewImage(jsonParsed);
             }
         }
 
@@ -261,7 +261,6 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         params.Name = FName(wall_name);
         auto wall = GetWorld()->SpawnActor<AWordListWall>(AWordListWall::StaticClass(), params);
         wall->SetVisibility(false);
-        wall->SetActorEnableCollision(false);
         wall->SetWallName(wall_name);
         walls.Add(wall);
     }
@@ -507,16 +506,16 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
             CopyTexture2DFragment(aoi.image, texture, start.X, start.Y, size.X, size.Y);
             AOIs.Add(aoi);
         }
-        if (texture)
-            stimulus->UpdateStimulus(texture, sx, sy, AOIs);
+        if (IsValid(texture))
+            stimulus->UpdateStimulus(texture, sx, sy, AOIs, true);
     }
 }
 
 void AReadingTrackerGameMode::Broadcast(FString& message)
 {
-    FDateTime t = FDateTime::Now();
-    float time = t.ToUnixTimestamp() * 1000.0f + t.GetMillisecond();
-    auto msg = FString::Printf(TEXT("{\"Time\": %f, %s}"), time, *message);
+    auto t = FDateTime::Now();
+    int64 time = t.ToUnixTimestamp() * 1000 + t.GetMillisecond();
+    auto msg = FString::Printf(TEXT("{\"Time\": %llu, %s}"), time, *message);
     for (auto& connection : m_server.get_connections())//broadcast to everyone
         connection->send(TCHAR_TO_UTF8(*msg));
 }

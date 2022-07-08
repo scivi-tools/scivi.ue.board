@@ -65,8 +65,10 @@ AStimulus::AStimulus()
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> BoardMaterialAsset(TEXT("Material'/Game/Materials/BoardMat.BoardMat'"));
     static ConstructorHelpers::FClassFinder<UUserWidget> CreateListWidgetClass(TEXT("/Game/UI/UI_CreateList_Menu"));
     static ConstructorHelpers::FClassFinder<UUserWidget> CanvasWidgetClass(TEXT("/Game/UI/UI_Canvas"));
+    static ConstructorHelpers::FObjectFinder<UTexture2D> DefaultTextureAsset(TEXT("Texture'/Game/Materials/DefaultStimulus.DefaultStimulus'"));
 
     base_material = BoardMaterialAsset.Object;
+    DefaultTexture = DefaultTextureAsset.Object;
 
     DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     RootComponent = DefaultSceneRoot;
@@ -81,7 +83,7 @@ AStimulus::AStimulus()
     Stimulus = CreateDefaultSubobject<UWidgetComponent>(TEXT("Canvas"));
     Stimulus->SetupAttachment(RootComponent);
     Stimulus->SetWidgetClass(CanvasWidgetClass.Class);
-    Stimulus->SetDrawSize(FVector2D(400.0f, 200.0f));
+    Stimulus->SetDrawSize(FVector2D(256.0, 256.0f));
     Stimulus->SetRelativeLocation(FVector(10.0f, 0.0f, 150.0f));
     Stimulus->SetUsingAbsoluteScale(true);
     Stimulus->SetCollisionResponseToChannel(Stimulus_Channel, ECollisionResponse::ECR_Block);
@@ -94,28 +96,30 @@ AStimulus::AStimulus()
 void AStimulus::BeginPlay()
 {
     Super::BeginPlay();
-    const int default_size = 100;
-    image = UTexture2D::CreateTransient(default_size, default_size);
+    image = DefaultTexture;
     //create textures for material
-    m_dynContour = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(GetWorld(), UCanvasRenderTarget2D::StaticClass(), default_size, default_size);
-    m_dynContour->ClearColor = FLinearColor(0, 0, 0, 0);
+    m_dynContour = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(GetWorld(), 
+                                                            UCanvasRenderTarget2D::StaticClass(), 
+                                                            image->GetSizeX(), image->GetSizeY());
     m_dynContour->OnCanvasRenderTargetUpdate.AddDynamic(this, &AStimulus::drawContour);
+    m_dynContour->ClearColor = FLinearColor(0, 0, 0, 0);
     m_dynContour->UpdateResource();
+    Stimulus->SetDrawSize(FVector2D(image->GetSizeX(), image->GetSizeY()));
+
     //create dynamic material
     m_dynMat = UMaterialInstanceDynamic::Create(base_material, Stimulus);
     m_dynMat->SetTextureParameterValue(TEXT("ContourTex"), m_dynContour);
     m_dynMat->SetTextureParameterValue(TEXT("DynTex"), (UTexture2D*)image);
-    //set material to the widget
-    Stimulus->SetDrawSize(FVector2D(default_size, default_size));
     auto image_widget = Cast<UImage>(Stimulus->GetWidget()->GetWidgetFromName(TEXT("Stimulus")));
     image_widget->SetBrushFromMaterial(m_dynMat);
+
     m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
     m_staticTransform = Stimulus->GetRelativeTransform();
 }
 
-void AStimulus::UpdateStimulus(UTexture2D* texture, float sx, float sy, const TArray<FAOI>& newAOIs)
+void AStimulus::UpdateStimulus(const UTexture2D* texture, float sx, float sy,
+                                const TArray<FAOI>& newAOIs, bool notify_scivi)
 {
-    int margin = 20.0f;
     AOIs = newAOIs;
     SelectedAOIs.Empty();
 
@@ -125,9 +129,9 @@ void AStimulus::UpdateStimulus(UTexture2D* texture, float sx, float sy, const TA
     auto image_size = FVector2D(image->GetSizeX(), image->GetSizeY());
     auto wall_scale = wall->GetComponentScale();
     auto wall_size = FVector2D(wall_scale.Y, wall_scale.Z) * 100;//one scale = 100 units
-    float factor = (wall_size.X - margin) / image_size.X;
-    if (image_size.X < image_size.Y)
-        factor = (wall_size.Y - margin) / image_size.Y;
+    float factor = (wall_size.X - StimulusMargin) / (image_size.X);
+    if (image_size.X <= image_size.Y)
+        factor = (wall_size.Y - StimulusMargin) / image_size.Y;
     FVector image_scale(1.0f, factor, factor);
     Stimulus->SetDrawSize(image_size);
     Stimulus->SetRelativeScale3D(image_scale);
@@ -137,7 +141,8 @@ void AStimulus::UpdateStimulus(UTexture2D* texture, float sx, float sy, const TA
 
     m_staticTransform = Stimulus->GetRelativeTransform();
     m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
-    OnImageUpdated();
+    if (notify_scivi)
+        NotifyScivi_ImageUpdated();
 }
 
 void AStimulus::BindInformant(ABaseInformant* _informant)
@@ -172,6 +177,11 @@ void AStimulus::ClearSelectedAOIs()
     }
     SelectedAOIs.Empty();
     UpdateContours();
+}
+
+void AStimulus::Reset()
+{
+    UpdateStimulus(DefaultTexture);
 }
 
 void AStimulus::OnInFocus(const FGaze& gaze, const FHitResult& hitPoint)
@@ -256,7 +266,7 @@ void AStimulus::OnTriggerReleased(const FHitResult& hitPoint)
     }
 }
 
-void AStimulus::OnImageUpdated()
+void AStimulus::NotifyScivi_ImageUpdated()
 {
     FGaze gaze;
     informant->GetGaze(gaze);
@@ -336,9 +346,6 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
     for (auto aoi : SelectedAOIs)
         drawContourOfAOI(cvs, FLinearColor(0, 0.2, 0, 1), th, aoi);
 #endif // EYE_DEBUG
-
-    /*if (informant && !informant->MC_Right->bHiddenInGame)
-        fillCircle(cvs, FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), 10, FLinearColor(1, 0, 0, 1));*/
 
     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
         fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * image->GetSizeX(), m_customCalibTarget.location.Y * image->GetSizeY()), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
