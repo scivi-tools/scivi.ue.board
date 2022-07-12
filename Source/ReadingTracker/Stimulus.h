@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "Private/InteractableActor.h"
 #include "Engine/Canvas.h"
 #include "IImageWrapper.h"
 #include "ReadingTrackerGameMode.h"
@@ -16,7 +16,7 @@
 
 
 UCLASS()
-class READINGTRACKER_API AStimulus : public AActor
+class READINGTRACKER_API AStimulus : public AInteractableActor
 {
     GENERATED_BODY()
 public:
@@ -34,9 +34,9 @@ public:
     float StimulusMargin = 20.0f;
 
     // ----------------- Input events -------------------
-    void OnInFocus(const struct FGaze& gaze, const FHitResult& hitPoint);
-    void OnTriggerPressed(const FHitResult& hitPoint);
-    void OnTriggerReleased(const FHitResult& hitPoint);
+    virtual void IsBeingFocused(const struct FGaze& gaze, const FHitResult& hitPoint) override;
+    virtual void IsBeingPressedByRTrigger(const FHitResult& hitPoint) override;
+    virtual void IsBeingReleasedByRTrigger(const FHitResult& hitPoint) override;
     void NotifyScivi_ImageUpdated();
 
     TArray<FAOI> AOIs;
@@ -74,7 +74,6 @@ protected:
     FAOI* findAOI(const FVector2D& pt, int& out_index) const;
 
     class ABaseInformant* informant = nullptr;
-   
 
     //dynamic texture
     UPROPERTY(EditAnywhere)
@@ -92,7 +91,7 @@ protected:
     FVector2D m_camTarget;
 #endif // EYE_DEBUG
 
-    //custom calibration
+    //---------------- custom calibration --------------------
 
     struct CalibPoint
     {

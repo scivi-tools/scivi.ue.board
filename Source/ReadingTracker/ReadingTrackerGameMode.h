@@ -2,24 +2,13 @@
 
 #pragma once
 
-#define DEPRECATED
-#define UI UI_ST
-THIRD_PARTY_INCLUDES_START
-#define ASIO_STANDALONE 1
-#include "ws/server_ws.hpp"
-THIRD_PARTY_INCLUDES_END
-#undef UI
-#undef ERROR
-#undef UpdateResource
-
 #include "CoreMinimal.h"
-#include "GameFramework/GameModeBase.h"
-#include "SRanipal_Eyes_Enums.h"
-#include "ReadingTracker.h"
+#include "Private/VRGameModeBase.h"
 #include "ReadingTrackerGameMode.generated.h"
 
 //Channel to check collision with 
 static const ECollisionChannel Stimulus_Channel = ECollisionChannel::ECC_GameTraceChannel1;
+static const ECollisionChannel Floor_Channel = ECollisionChannel::ECC_WorldStatic;
 
 USTRUCT()
 struct FAOI
@@ -62,20 +51,15 @@ enum class EWallLogAction
  * 
  */
 UCLASS()
-class READINGTRACKER_API AReadingTrackerGameMode : public AGameModeBase
+class READINGTRACKER_API AReadingTrackerGameMode : public AVRGameModeBase
 {
 	GENERATED_BODY()
 public:
 	AReadingTrackerGameMode(const FObjectInitializer& ObjectInitializer);
-	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	int MaxWallsCount = 9;
-
-	UFUNCTION(BlueprintCallable)
-	bool RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FHitResult& hitResult);
 
 	//----------------- Scene ----------------------
 public:
@@ -84,7 +68,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadwrite)
 	float RecordingMenuRemoteness = 170.0f;
 
-	void NotifyInformantSpawned(class ABaseInformant* _informant);
+	virtual void NotifyInformantSpawned(class ABaseInformant* _informant) override;
 	
 	UFUNCTION(BlueprintCallable)
 	void CreateListOfWords(const FString& wall_name);
@@ -102,14 +86,9 @@ public:
 	TSubclassOf<UUserWidget> RecordingMenuClass;
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	TSubclassOf<UUserWidget> CreateListButtonClass;
-	UPROPERTY(EditAnywhere, BlueprintReadwrite)
-	TMap<FString, TSubclassOf<class AExperimentStepBase>> experiment_step_classes;
-
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "Stimulus")
 	class AStimulus* stimulus;
-	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "Informant")
-	class ABaseInformant* informant;
 	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "RecordingMenu")
 	class AUI_Blank* uiRecordingMenu;
 	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName="CreateListButton")
@@ -118,8 +97,6 @@ public:
 	TArray<class AWordListWall*> walls;
 
 protected:
-	UPROPERTY()
-	class AExperimentStepBase* current_experiment_step = nullptr;
 	int created_walls_count = 0;
 	UFUNCTION()
 	void CreateListBtn_OnClicked();
@@ -128,26 +105,12 @@ protected:
 	UFUNCTION()
 	void RecordingMenu_CreateList();
 	void SetRecordingMenuVisibility(bool new_visibility);
-	
-
-	//------------------- VR ----------------------
-public:
-	UFUNCTION(BlueprintCallable)
-	void CalibrateVR();
-	UPROPERTY(EditAnywhere)
-	SupportedEyeVersion EyeVersion;
 
 //----------------------- SciVi networking --------------
 public:
 	void SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI = TEXT(""));
 	void SendGazeToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id);
-	void Broadcast(FString& message);
 protected:
-	using WSServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
-	void initWS();
-	void wsRun() { m_server.start(); }
+	virtual void OnSciViMessageReceived(TSharedPtr<FJsonObject> msgJson) override;
 	void ParseNewImage(const TSharedPtr<FJsonObject>& json);
-	WSServer m_server;
-	TUniquePtr<std::thread> m_serverThread = nullptr;//you can't use std::thread in UE4, because ue4 can't destroy it then game is exiting
-	TQueue<FString> message_queue;
 };

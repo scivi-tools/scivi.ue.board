@@ -3,20 +3,16 @@
 
 #include "ReadingTrackerGameMode.h"
 #include "Stimulus.h"
-#include "BaseInformant.h"
+#include "WordListWall.h"
 #include "Private/UI_Blank.h"
-#include "Private/ExperimentStepBase.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
 #include "Components/WidgetComponent.h"
-#include "WordListWall.h"
 #include "ImageUtils.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
-#include "Json.h"
 #include "Misc/Base64.h"
-#include "SRanipalEye_Framework.h"
-#include "SRanipal_API_Eye.h"
+
 
 
 UTexture2D* loadTexture2DFromBytes(const TArray<uint8>& bytes, EImageFormat fmt)
@@ -101,128 +97,25 @@ void CopyTexture2DFragment(UTexture2D* destination, const UTexture2D* source, in
 
 AReadingTrackerGameMode::AReadingTrackerGameMode(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-    PrimaryActorTick.bStartWithTickEnabled = true;
-    PrimaryActorTick.bCanEverTick = true;
     static ConstructorHelpers::FClassFinder<UUserWidget> RecordingWidgetClass(TEXT("/Game/UI/UI_RecordVoice"));
     static ConstructorHelpers::FClassFinder<UUserWidget> CreateListWidgetClass(TEXT("/Game/UI/UI_CreateList_Menu"));
-    static ConstructorHelpers::FClassFinder<AExperimentStepBase> NullStepClass(TEXT("/Game/Steps/NullStep"));
     RecordingMenuClass = RecordingWidgetClass.Class;
     CreateListButtonClass = CreateListWidgetClass.Class;
-    experiment_step_classes.Add(TEXT("NullStep"), NullStepClass.Class);
-}
-
-void AReadingTrackerGameMode::BeginPlay()
-{
-    Super::BeginPlay();
-    auto instance = SRanipalEye_Framework::Instance();
-    if (instance)
-        instance->StartFramework(EyeVersion);
-
 }
 
 void AReadingTrackerGameMode::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-    FString json_text;
-    if (message_queue.Dequeue(json_text))
-    {
-        TSharedPtr<FJsonObject> jsonParsed;
-        TSharedRef<TJsonReader<TCHAR>> jsonReader = TJsonReaderFactory<TCHAR>::Create(json_text);
-        if (FJsonSerializer::Deserialize(jsonReader, jsonParsed))
-        {
-            if (jsonParsed->TryGetField("calibrate")) {
-                UE_LOG(LogTemp, Display, TEXT("start calibration"));
-                CalibrateVR();
-            }
-            else if (jsonParsed->TryGetField("customCalibrate"))
-                stimulus->customCalibrate();
-            //else if (jsonParsed->TryGetField("setMotionControllerVisibility"))
-            //{
-            //    auto PC = GetWorld()->GetFirstPlayerController();
-            //    bool visibility = jsonParsed->GetBoolField("setMotionControllerVisibility");
-            //    //informant->SciVi_MCLeft_Visibility = visibility;
-            //    informant->SciVi_MCRight_Visibility = visibility;
-            //}
-            else if (jsonParsed->TryGetField("Speech"))
-            {
-                auto speech = jsonParsed->GetStringField(TEXT("Speech"));
-                auto root = uiRecordingMenu->GetWidget();
-                auto textWidget = Cast<UEditableText>(root->GetWidgetFromName("textNewName"));
-                if (textWidget)
-                {
-                    auto name = textWidget->GetText().ToString();
-                    name.Appendf(TEXT(" %s"), *speech);
-                    textWidget->SetText(FText::FromString(name));
-                }
-            }
-            else if (jsonParsed->TryGetField(TEXT("setExperimentStep")))
-            {
-                auto step_name = jsonParsed->GetStringField(TEXT("setExperimentStep"));
-                if (experiment_step_classes.Contains(step_name))
-                {
-                    if (IsValid(current_experiment_step)) 
-                    {
-                        GetWorld()->RemoveActor(current_experiment_step, true);
-                        current_experiment_step->Destroy();//it calls end play and quit step
-                    }
-                    auto &step_class = experiment_step_classes[step_name];
-                    FActorSpawnParameters params;
-                    params.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
-                    params.Name = FName(FString::Printf(TEXT("ExperimentStep_%s"), *step_name));
-                    current_experiment_step = GetWorld()->SpawnActor<AExperimentStepBase>(step_class, params);//it calls begin play event and starts step
-                }
-                else UE_LOG(LogGameMode, Warning, TEXT("New phase with unknown name"));
-            }
-            else {
-                for (auto wall : walls) 
-                {
-                    wall->SetVisibility(false);
-                    wall->ClearList();
-                }
-                ReplaceObjectsOnScene(StimulusRemoteness);
-                ParseNewImage(jsonParsed);
-            }
-        }
-
-    }
+            
 
 
-}
-
-void AReadingTrackerGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-    Super::EndPlay(EndPlayReason);
-    m_server.stop();
-    m_serverThread->join();
-    m_serverThread.Reset();
-    SRanipalEye_Framework::Instance()->StopFramework();
-}
-
-bool AReadingTrackerGameMode::RayTrace(const AActor* ignoreActor, const FVector& origin, const FVector& end, FHitResult& hitResult)
-{
-    const float ray_thickness = 1.0f;
-    FCollisionQueryParams traceParam = FCollisionQueryParams(FName("traceParam"), true, ignoreActor);
-    traceParam.bReturnPhysicalMaterial = false;
-
-    if (ray_thickness <= 0.0f)
-    {
-        return GetWorld()->LineTraceSingleByChannel(hitResult, origin, end,
-            Stimulus_Channel, traceParam);
-    }
-    else
-    {
-        FCollisionShape sph = FCollisionShape();
-        sph.SetSphere(ray_thickness);
-        return GetWorld()->SweepSingleByChannel(hitResult, origin, end, FQuat(0.0f, 0.0f, 0.0f, 0.0f),
-            Stimulus_Channel, sph, traceParam);
-    }
 }
 
 // -------------------------- Scene modification ------------------
 
 void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
 {
-    informant = _informant;
+    Super::NotifyInformantSpawned(_informant);
     stimulus = GetWorld()->SpawnActor<AStimulus>(AStimulus::StaticClass());
     stimulus->BindInformant(informant);
     //spawn recording menu
@@ -401,48 +294,33 @@ void AReadingTrackerGameMode::CreateListBtn_OnClicked()
     SetRecordingMenuVisibility(true);
 }
 
-// ---------------------- VR ------------------------
+//----------- Scivi networking -------------------
 
-void AReadingTrackerGameMode::CalibrateVR()
+void AReadingTrackerGameMode::OnSciViMessageReceived(TSharedPtr<FJsonObject> msgJson)
 {
-    ViveSR::anipal::Eye::LaunchEyeCalibration(nullptr);
-}
-
-//---------------------- SciVi communication ------------------
-
-void AReadingTrackerGameMode::initWS()
-{
-    m_server.config.port = 81;
-
-    auto& ep = m_server.endpoint["^/ue4/?$"];
-
-    ep.on_message = [this](std::shared_ptr<WSServer::Connection> connection, std::shared_ptr<WSServer::InMessage> msg)
+    Super::OnSciViMessageReceived(msgJson);
+    if (msgJson->TryGetField("customCalibrate")) stimulus->customCalibrate();
+    else if (msgJson->TryGetField("Speech"))
     {
-        auto str = FString(UTF8_TO_TCHAR(msg->string().c_str()));
-        message_queue.Enqueue(str);
-    };
-
-    ep.on_open = [](std::shared_ptr<WSServer::Connection> connection)
-    {
-        UE_LOG(LogTemp, Display, TEXT("WebSocket: Opened"));
-    };
-
-    ep.on_close = [](std::shared_ptr<WSServer::Connection> connection, int status, const std::string&)
-    {
-        UE_LOG(LogTemp, Display, TEXT("WebSocket: Closed"));
-    };
-
-    ep.on_handshake = [](std::shared_ptr<WSServer::Connection>, SimpleWeb::CaseInsensitiveMultimap&)
-    {
-        return SimpleWeb::StatusCode::information_switching_protocols;
-    };
-
-    ep.on_error = [](std::shared_ptr<WSServer::Connection> connection, const SimpleWeb::error_code& ec)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("WebSocket: Error"));
-    };
-
-    m_serverThread = MakeUnique<std::thread>(&AReadingTrackerGameMode::wsRun, this);
+        auto speech = msgJson->GetStringField(TEXT("Speech"));
+        auto root = uiRecordingMenu->GetWidget();
+        auto textWidget = Cast<UEditableText>(root->GetWidgetFromName("textNewName"));
+        if (textWidget)
+        {
+            auto name = textWidget->GetText().ToString();
+            name.Appendf(TEXT(" %s"), *speech);
+            textWidget->SetText(FText::FromString(name));
+        }
+    }
+    else {
+        for (auto wall : walls)
+        {
+            wall->SetVisibility(false);
+            wall->ClearList();
+        }
+        ReplaceObjectsOnScene(StimulusRemoteness);
+        ParseNewImage(msgJson);
+    }
 }
 
 void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
@@ -473,12 +351,12 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
         TArray<FAOI> AOIs;
         TMap<FString, int> counts;
         int last_id = 0;
-        for (auto &aoi_text : json->GetArrayField("AOIs"))
+        for (auto& aoi_text : json->GetArrayField("AOIs"))
         {
             FAOI aoi;
             aoi.id = last_id++;
             auto nameField = aoi_text->AsObject()->TryGetField("name");
-            if (nameField) 
+            if (nameField)
             {
                 auto name_str = nameField->AsString();
                 if (counts.Contains(name_str)) counts[name_str]++;
@@ -488,14 +366,14 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
             auto pathField = aoi_text->AsObject()->TryGetField("path");
             if (pathField)
             {
-                auto &path = pathField->AsArray();
-                for (auto &point : path)
+                auto& path = pathField->AsArray();
+                for (auto& point : path)
                     aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
             }
             auto bboxField = aoi_text->AsObject()->TryGetField("bbox");
             if (bboxField)
             {
-                auto &bbox = bboxField->AsArray();
+                auto& bbox = bboxField->AsArray();
                 aoi.bbox = FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
                     FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber()));
             }
@@ -509,15 +387,6 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
         if (IsValid(texture))
             stimulus->UpdateStimulus(texture, sx, sy, AOIs, true);
     }
-}
-
-void AReadingTrackerGameMode::Broadcast(FString& message)
-{
-    auto t = FDateTime::Now();
-    int64 time = t.ToUnixTimestamp() * 1000 + t.GetMillisecond();
-    auto msg = FString::Printf(TEXT("{\"Time\": %llu, %s}"), time, *message);
-    for (auto& connection : m_server.get_connections())//broadcast to everyone
-        connection->send(TCHAR_TO_UTF8(*msg));
 }
 
 void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI)
@@ -545,7 +414,7 @@ void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FS
             "\"Wall\": \"%s\","
             "\"AOI\": \"%s\"}"), *ActionStr, *WallName, *AOI);
     }
-    Broadcast(msg);
+    SendToSciVi(msg);
 }
 
 void AReadingTrackerGameMode::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id)
@@ -561,5 +430,5 @@ void AReadingTrackerGameMode::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, 
         gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
         gaze.direction.X, gaze.direction.Y, gaze.direction.Z,
         gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, *Id);
-    Broadcast(json);
+    SendToSciVi(json);
 }

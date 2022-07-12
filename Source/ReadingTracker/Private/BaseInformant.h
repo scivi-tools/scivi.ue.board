@@ -6,18 +6,26 @@
 #include "GameFramework/Character.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
-#include "ReadingTracker.h"
 #include "BaseInformant.generated.h"
 
+USTRUCT(BlueprintType)
 struct FGaze
 {
+	GENERATED_BODY()
+	UPROPERTY()
 	FVector origin;
+	UPROPERTY()
 	FVector direction;
-	float left_pupil_diameter_mm;
-	float left_pupil_openness;
-	float right_pupil_diameter_mm;
-	float right_pupil_openness;
-	float cf;
+	UPROPERTY()
+	float left_pupil_diameter_mm = 0.0f;
+	UPROPERTY()
+	float left_pupil_openness = 0.0f;
+	UPROPERTY()
+	float right_pupil_diameter_mm = 0.0f;
+	UPROPERTY()
+	float right_pupil_openness = 0.0f;
+	UPROPERTY()
+	float cf = 0.0f;
 };
 
 UCLASS()
@@ -45,6 +53,8 @@ public:
 	UFUNCTION()
 	void StopRecording();
 	bool IsRecording() const;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bIsWalkingEnabled = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
 	UCameraComponent* CameraComponent;
@@ -76,9 +86,22 @@ protected:
 	UFUNCTION()
 	void OnRTriggerReleased();
 	UFUNCTION()
+	void OnLTriggerPressed();
+	UFUNCTION()
+	void OnLTriggerReleased();
+	UFUNCTION()
 	void CameraMove_LeftRight(float value);
 	UFUNCTION()
 	void CameraMove_UpDown(float value);
+	UFUNCTION()
+	void Walking_Trajectory();
+	UFUNCTION()
+	void Walking_Teleport();
+	bool bIsWalking = false;
+	FVector newPosition;
+	float HeightDeviance = 5.0f;
+	float FloorHeight = 0.0f;
+
 
 	
 };

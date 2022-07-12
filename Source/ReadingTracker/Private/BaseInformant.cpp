@@ -2,18 +2,19 @@
 
 
 #include "BaseInformant.h"
-#include "ReadingTrackerGameMode.h"
+#include "VRGameModeBase.h"
+#include "InteractableActor.h"
 #include "Components/WidgetInteractionComponent.h"
 #include "Components/ArrowComponent.h"
 #include <AudioCaptureComponent.h>
-#include "Private/SubmixRecorder.h"
+#include "SubmixRecorder.h"
 #include "SRanipal_API_Eye.h"
 #include "SRanipalEye_Core.h"
 #include "SRanipalEye_FunctionLibrary.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
-#include "Stimulus.h"
 #include "XRMotionControllerBase.h"
 #include "Misc/Base64.h"
+#include "Kismet/GameplayStatics.h"//for PredictProjectilePath
 
 // Sets default values
 ABaseInformant::ABaseInformant()
@@ -103,23 +104,24 @@ void ABaseInformant::BeginPlay()
 
 	RecorderComponent->OnRecorded = [this](const int16* AudioData, int NumChannels, int NumSamples, int SampleRate)
 	{
-		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+		auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
 		/*TArray64<uint8_t> arr((uint8_t*)AudioData, NumSamples * sizeof(int16));
 		FFileHelper::SaveArrayToFile(arr, TEXT("aud.wav"));*/
 		auto b64pcm = FBase64::Encode((uint8_t*)AudioData, NumSamples * sizeof(int16));
 		auto json = FString::Printf(TEXT("\"WAV\": {\"SampleRate\": %i,"
 					"\"PCM\": \"data:audio/wav;base64,%s\"}"),  SampleRate, *b64pcm);
-		GM->Broadcast(json);
+		GM->SendToSciVi(json);
 	};
 	RecorderComponent->OnRecordFinished = [this]()
 	{
-		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+		auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
 		auto json = FString::Printf(TEXT("\"WAV\": \"End\""));
-		GM->Broadcast(json);
+		GM->SendToSciVi(json);
 	};
 	AudioCapture->Activate();
+	FloorHeight = GetActorLocation().Z - (RootComponent->CalcLocalBounds().BoxExtent.Z);
 
-	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+	auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
 	if (GM)
 		GM->NotifyInformantSpawned(this);
 }
@@ -128,7 +130,7 @@ void ABaseInformant::BeginPlay()
 void ABaseInformant::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+	auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
 	//collect gaze info
 	FGaze gaze;
 	FHitResult hitPoint(ForceInit);
@@ -137,9 +139,25 @@ void ABaseInformant::Tick(float DeltaTime)
 	EyeTrackingArrow->SetWorldLocationAndRotation(gaze.origin, gaze.direction.Rotation());
 	if (GM->RayTrace(this, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
 	{
-		auto focusedStimulus = Cast<AStimulus>(hitPoint.Actor);
-		if (focusedStimulus)
-			focusedStimulus->OnInFocus(gaze, hitPoint);
+		auto actor = Cast<AInteractableActor>(hitPoint.Actor);
+		if (IsValid(actor))
+			actor->IsBeingFocused(gaze, hitPoint);
+	}
+
+	if (bIsWalking)
+	{
+		FPredictProjectilePathParams params(HeightDeviance,
+			MC_Right->GetComponentLocation(),
+			MC_Right->GetForwardVector() * 1000.0f, 2.0f, 
+			ECollisionChannel::ECC_WorldStatic, { this });
+		params.DrawDebugType = EDrawDebugTrace::ForOneFrame;
+		FPredictProjectilePathResult result;
+		if (UGameplayStatics::PredictProjectilePath(GetWorld(), params, result) 
+				&& result.HitResult.Location.Z < FloorHeight + HeightDeviance &&
+				result.HitResult.Location.Z >= FloorHeight - HeightDeviance)
+			newPosition = result.HitResult.Location;
+		else
+			newPosition = GetActorLocation();
 	}
 }
 
@@ -149,26 +167,32 @@ void ABaseInformant::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	InputComponent->BindAction("RTrigger", IE_Pressed, this, &ABaseInformant::OnRTriggerPressed);
 	InputComponent->BindAction("RTrigger", IE_Released, this, &ABaseInformant::OnRTriggerReleased);
+	InputComponent->BindAction("LTrigger", IE_Pressed, this, &ABaseInformant::OnLTriggerPressed);
+	InputComponent->BindAction("LTrigger", IE_Released, this, &ABaseInformant::OnLTriggerReleased);
+	InputComponent->BindAction("Walking", IE_Pressed, this, &ABaseInformant::Walking_Trajectory);
+	InputComponent->BindAction("Walking", IE_Released, this, &ABaseInformant::Walking_Teleport);
 	InputComponent->BindAxis("CameraMove_RightLeft", this, &ABaseInformant::CameraMove_LeftRight);
 	InputComponent->BindAxis("CameraMove_UpDown", this, &ABaseInformant::CameraMove_UpDown);
 }
 
 void ABaseInformant::OnRTriggerPressed()
 {
-	FGaze gaze;
-	GetGaze(gaze);
-	const float ray_length = 1000.0f;
-	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-	FVector trigger_ray = MC_Right->GetComponentLocation() +
-			MC_Right->GetForwardVector() * ray_length;
-	FHitResult hitPoint(ForceInit);
-	if (GM->RayTrace(this, MC_Right->GetComponentLocation(), trigger_ray, hitPoint))
+	if (!MC_Right->bHiddenInGame)
 	{
-		auto triggeredStimulus = Cast<AStimulus>(hitPoint.Actor);
-		if (triggeredStimulus)
-			triggeredStimulus->OnTriggerPressed(hitPoint);		
+		FGaze gaze;
+		GetGaze(gaze);
+		const float ray_length = 1000.0f;
+		auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
+		FVector trigger_ray = MC_Right->GetComponentLocation() +
+			MC_Right->GetForwardVector() * ray_length;
+		FHitResult hitPoint(ForceInit);
+		if (GM->RayTrace(this, MC_Right->GetComponentLocation(), trigger_ray, hitPoint))
+		{
+			auto actor = Cast<AInteractableActor>(hitPoint.Actor);
+			if (IsValid(actor))
+				actor->IsBeingPressedByRTrigger(hitPoint);
+		}
 	}
-		
 
 	//start event of clicking
 	FKey LMB(TEXT("LeftMouseButton"));
@@ -177,23 +201,34 @@ void ABaseInformant::OnRTriggerPressed()
 
 void ABaseInformant::OnRTriggerReleased()
 {
-	FGaze gaze;
-	GetGaze(gaze);
-	const float ray_length = 1000.0f;
-	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-	FVector trigger_ray = MC_Right->GetComponentLocation() +
-		MC_Right->GetForwardVector() * ray_length;
-	FHitResult hitPoint(ForceInit);
-	if (GM->RayTrace(this, MC_Right->GetComponentLocation(), trigger_ray, hitPoint))
+	if (!MC_Right->bHiddenInGame)
 	{
-		auto triggeredStimulus = Cast<AStimulus>(hitPoint.Actor);
-		if (triggeredStimulus) 
-			triggeredStimulus->OnTriggerReleased(hitPoint);
+		FGaze gaze;
+		GetGaze(gaze);
+		const float ray_length = 1000.0f;
+		auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
+		FVector trigger_ray = MC_Right->GetComponentLocation() +
+			MC_Right->GetForwardVector() * ray_length;
+		FHitResult hitPoint(ForceInit);
+		if (GM->RayTrace(this, MC_Right->GetComponentLocation(), trigger_ray, hitPoint))
+		{
+			auto actor = Cast<AInteractableActor>(hitPoint.Actor);
+			if (IsValid(actor))
+				actor->IsBeingReleasedByRTrigger(hitPoint);
+		}
 	}
-
 	//start event of clicking
 	FKey LMB(TEXT("LeftMouseButton"));
 	MC_Right_Interaction_Lazer->ReleasePointerKey(LMB);
+}
+
+void ABaseInformant::OnLTriggerPressed()
+{
+	
+}
+
+void ABaseInformant::OnLTriggerReleased()
+{
 }
 
 void ABaseInformant::CameraMove_LeftRight(float value)
@@ -204,6 +239,24 @@ void ABaseInformant::CameraMove_LeftRight(float value)
 void ABaseInformant::CameraMove_UpDown(float value)
 {
 	CameraComponent->AddLocalRotation(FRotator(value, 0.0f, 0.0f));
+}
+
+void ABaseInformant::Walking_Trajectory()
+{
+	if (!MC_Right->bHiddenInGame && bIsWalkingEnabled && !bIsWalking)
+	{
+		bIsWalking = true;
+	}
+}
+
+void ABaseInformant::Walking_Teleport()
+{
+	if (bIsWalking) {
+		bIsWalking = false;
+		newPosition.Z = GetActorLocation().Z;
+		if ((newPosition - GetActorLocation()).Size() >= 10.0f)
+			SetActorLocation(newPosition);
+	}
 }
 
 void ABaseInformant::SetVisibility_MC_Right(bool visibility)

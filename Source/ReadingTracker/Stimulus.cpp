@@ -1,7 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Stimulus.h"
-#include "BaseInformant.h"
 #include "Components/WidgetComponent.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -157,15 +156,15 @@ void AStimulus::UpdateContours()
 
 void AStimulus::ClearSelectedAOIs()
 {
+    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
     FGaze gaze;
-    informant->GetGaze(gaze);
+    GM->informant->GetGaze(gaze);
     FVector2D uv(-1000.0f, -1000.0f);
     //check if gaze im stimulus => then calc uv
-    auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
     FHitResult hitPoint(ForceInit);
     const float ray_radius = 1.0f;
     const float ray_length = 1000.0f;
-    if (GM->RayTrace(informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
+    if (GM->RayTrace(GM->informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
         if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
             uv = sceneToBillboard(hitPoint.Location);
@@ -184,32 +183,26 @@ void AStimulus::Reset()
     UpdateStimulus(DefaultTexture);
 }
 
-void AStimulus::OnInFocus(const FGaze& gaze, const FHitResult& hitPoint)
+void AStimulus::IsBeingFocused(const FGaze& gaze, const FHitResult& hitPoint)
 {
     if (hitPoint.Component == Stimulus)
     {
         auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
         FVector2D uv = sceneToBillboard(hitPoint.Location);
         int currentAOIIndex = -1;
-        if (!informant->MC_Right->bHiddenInGame)
+        if (!GM->informant->MC_Right->bHiddenInGame)
             auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
         GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
     }
+    Super::IsBeingFocused(gaze, hitPoint);
 }
 
-void AStimulus::OnTriggerPressed(const FHitResult& hitPoint)
+void AStimulus::IsBeingPressedByRTrigger(const FHitResult& hitPoint)
 {
-    //if (hitPoint.Component == Stimulus)
-    //{
-    //    if (!informant->MC_Right->bHiddenInGame)
-    //    {
-    //        m_laser = sceneToBillboard(hitPoint.Location);
-    //        UpdateContours();
-    //    }
-    //}
+    Super::IsBeingPressedByRTrigger(hitPoint);
 }
 
-void AStimulus::OnTriggerReleased(const FHitResult& hitPoint)
+void AStimulus::IsBeingReleasedByRTrigger(const FHitResult& hitPoint)
 {
     if (hitPoint.Component == Stimulus)
     {
@@ -247,12 +240,12 @@ void AStimulus::OnTriggerReleased(const FHitResult& hitPoint)
         if (kk == kn * kn)
             kk = 0;
 #endif // COLLECCT_ANGULAR_ERROR
+        auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
         FGaze gaze;
-        informant->GetGaze(gaze);
+        GM->informant->GetGaze(gaze);
         auto m_laser = sceneToBillboard(hitPoint.Location);
         int currentAOIIndex = -1;
-        auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-        if (!informant->MC_Right->bHiddenInGame)
+        if (!GM->informant->MC_Right->bHiddenInGame)
         {
             auto selectedAOI = findAOI(FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), currentAOIIndex);
             if (selectedAOI)
@@ -264,24 +257,25 @@ void AStimulus::OnTriggerReleased(const FHitResult& hitPoint)
         UpdateContours();
         GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
     }
+    Super::IsBeingReleasedByRTrigger(hitPoint);
 }
 
 void AStimulus::NotifyScivi_ImageUpdated()
 {
-    FGaze gaze;
-    informant->GetGaze(gaze);
-
     auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+    FGaze gaze;
+    GM->informant->GetGaze(gaze);
+
     FHitResult hitPoint(ForceInit);
     const float ray_radius = 1.0f;
     const float ray_length = 1000.0f;
-    if (GM->RayTrace(informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
+    if (GM->RayTrace(GM->informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
         if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
         {
             FVector2D uv = sceneToBillboard(hitPoint.Location);
             int currentAOIIndex = -1;
-            if (!informant->MC_Right->bHiddenInGame)
+            if (!GM->informant->MC_Right->bHiddenInGame)
                 auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
             GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("IMG_UP"));
         }
@@ -382,7 +376,6 @@ FAOI* AStimulus::findAOI(const FVector2D& pt, int& out_index) const
 }
 
 //------------------------ Custom Calibration ------------------------
-
 bool AStimulus::positiveOctant(const FVector gaze, const CalibPoint p1, const CalibPoint &p2, const CalibPoint &p3,
                                float &w1, float &w2, float &w3) const
 {
