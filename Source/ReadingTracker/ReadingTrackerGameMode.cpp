@@ -4,7 +4,7 @@
 #include "ReadingTrackerGameMode.h"
 #include "Stimulus.h"
 #include "WordListWall.h"
-#include "Private/UI_Blank.h"
+#include "UI_Blank.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
 #include "Components/WidgetComponent.h"

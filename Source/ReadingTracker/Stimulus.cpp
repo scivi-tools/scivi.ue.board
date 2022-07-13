@@ -163,7 +163,7 @@ void AStimulus::ClearSelectedAOIs()
     //check if gaze im stimulus => then calc uv
     FHitResult hitPoint(ForceInit);
     const float ray_radius = 1.0f;
-    const float ray_length = 1000.0f;
+    const float ray_length = GM->informant->GetInteractionDistance();
     if (GM->RayTrace(GM->informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
         if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
@@ -183,7 +183,7 @@ void AStimulus::Reset()
     UpdateStimulus(DefaultTexture);
 }
 
-void AStimulus::IsBeingFocused(const FGaze& gaze, const FHitResult& hitPoint)
+void AStimulus::ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitPoint)
 {
     if (hitPoint.Component == Stimulus)
     {
@@ -194,15 +194,10 @@ void AStimulus::IsBeingFocused(const FGaze& gaze, const FHitResult& hitPoint)
             auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
         GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
     }
-    Super::IsBeingFocused(gaze, hitPoint);
+    Super::ProcessEyeTrack(gaze, hitPoint);
 }
 
-void AStimulus::IsBeingPressedByRTrigger(const FHitResult& hitPoint)
-{
-    Super::IsBeingPressedByRTrigger(hitPoint);
-}
-
-void AStimulus::IsBeingReleasedByRTrigger(const FHitResult& hitPoint)
+void AStimulus::OnReleasedByTrigger(const FHitResult& hitPoint)
 {
     if (hitPoint.Component == Stimulus)
     {
@@ -257,7 +252,7 @@ void AStimulus::IsBeingReleasedByRTrigger(const FHitResult& hitPoint)
         UpdateContours();
         GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
     }
-    Super::IsBeingReleasedByRTrigger(hitPoint);
+    Super::OnReleasedByTrigger(hitPoint);
 }
 
 void AStimulus::NotifyScivi_ImageUpdated()
@@ -268,7 +263,7 @@ void AStimulus::NotifyScivi_ImageUpdated()
 
     FHitResult hitPoint(ForceInit);
     const float ray_radius = 1.0f;
-    const float ray_length = 1000.0f;
+    const float ray_length = GM->informant->GetInteractionDistance();
     if (GM->RayTrace(GM->informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
         if (hitPoint.Actor == this && hitPoint.Component == Stimulus)

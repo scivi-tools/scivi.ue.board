@@ -9,12 +9,12 @@ public class ReadingTracker : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		bEnableExceptions = true;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "SRanipal", "SRanipalEye", "UMG", "Slate", "SlateCore" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "VRExperimentsBase" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "OpenSSL",  "Json", "JsonUtilities", "HeadMountedDisplay", "SignalProcessing", "AudioCapture" });
+		PrivateDependencyModuleNames.AddRange(new string[] {"SRanipal", "SRanipalEye", "HeadMountedDisplay", "Json", "JsonUtilities", });
 		
 		PrivateIncludePaths.AddRange(new string[] {
-			"ThirdPartyLibs",
+			"../Plugins/VRExperimentsBase/Source/ThirdPartyLibs",
 			"../Plugins/SRanipal/Source/SRanipal/Public/Eye"
 		});
 

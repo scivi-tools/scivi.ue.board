@@ -8,6 +8,21 @@
 		{
 			"sources": [
 				{
+					"mode": "dpad",
+					"path": "/user/hand/right/input/trackpad",
+					"parameters":
+					{
+						"sub_mode": "click"
+					},
+					"inputs":
+					{
+						"north":
+						{
+							"output": "/actions/main/in/CustumCalib"
+						}
+					}
+				},
+				{
 					"mode": "trigger",
 					"path": "/user/hand/right/input/trigger",
 					"inputs":
@@ -29,7 +44,22 @@
 					{
 						"north":
 						{
-							"output": "/actions/main/in/CustumCalib"
+							"output": "/actions/main/in/Walking"
+						}
+					}
+				},
+				{
+					"mode": "dpad",
+					"path": "/user/hand/left/input/trackpad",
+					"parameters":
+					{
+						"sub_mode": "click"
+					},
+					"inputs":
+					{
+						"north":
+						{
+							"output": "/actions/main/in/Walking"
 						}
 					}
 				}

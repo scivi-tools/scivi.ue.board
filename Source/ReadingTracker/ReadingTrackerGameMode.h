@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Private/VRGameModeBase.h"
+#include "VRGameModeBase.h"
 #include "ReadingTrackerGameMode.generated.h"
 
 //Channel to check collision with 

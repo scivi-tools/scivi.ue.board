@@ -148,11 +148,15 @@
 			"requirement": "optional"
 		},
 		{
+			"name": "/actions/main/in/CustumCalib",
+			"type": "boolean"
+		},
+		{
 			"name": "/actions/main/in/RTrigger",
 			"type": "boolean"
 		},
 		{
-			"name": "/actions/main/in/CustumCalib",
+			"name": "/actions/main/in/Walking",
 			"type": "boolean"
 		},
 		{
@@ -161,6 +165,30 @@
 		},
 		{
 			"name": "/actions/main/in/CameraMove_UpDown axis",
+			"type": "vector1"
+		},
+		{
+			"name": "/actions/main/in/LookUp axis",
+			"type": "vector1"
+		},
+		{
+			"name": "/actions/main/in/LookUpRate axis",
+			"type": "vector1"
+		},
+		{
+			"name": "/actions/main/in/MoveForward axis",
+			"type": "vector1"
+		},
+		{
+			"name": "/actions/main/in/MoveRight axis",
+			"type": "vector1"
+		},
+		{
+			"name": "/actions/main/in/Turn axis",
+			"type": "vector1"
+		},
+		{
+			"name": "/actions/main/in/TurnRate axis",
 			"type": "vector1"
 		}
 	],
@@ -404,10 +432,17 @@
 			"/actions/main/out/vibrateleft": "Haptic (Left)",
 			"/actions/main/out/vibrateright": "Haptic (Right)",
 			"/actions/main/in/open_console": "Open Console",
-			"/actions/main/in/RTrigger": "RTrigger",
 			"/actions/main/in/CustumCalib": "CustumCalib",
+			"/actions/main/in/RTrigger": "RTrigger",
+			"/actions/main/in/Walking": "Walking",
 			"/actions/main/in/CameraMove_RightLeft axis": "CameraMove_RightLeft",
 			"/actions/main/in/CameraMove_UpDown axis": "CameraMove_UpDown",
+			"/actions/main/in/LookUp axis": "LookUp",
+			"/actions/main/in/LookUpRate axis": "LookUpRate",
+			"/actions/main/in/MoveForward axis": "MoveForward",
+			"/actions/main/in/MoveRight axis": "MoveRight",
+			"/actions/main/in/Turn axis": "Turn",
+			"/actions/main/in/TurnRate axis": "TurnRate",
 			"/actions/main": "Main Game Actions"
 		}
 	]

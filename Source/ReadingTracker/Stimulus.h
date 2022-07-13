@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Private/InteractableActor.h"
+#include "InteractableActor.h"
 #include "Engine/Canvas.h"
 #include "IImageWrapper.h"
 #include "ReadingTrackerGameMode.h"
@@ -33,11 +33,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     float StimulusMargin = 20.0f;
 
-    // ----------------- Input events -------------------
-    virtual void IsBeingFocused(const struct FGaze& gaze, const FHitResult& hitPoint) override;
-    virtual void IsBeingPressedByRTrigger(const FHitResult& hitPoint) override;
-    virtual void IsBeingReleasedByRTrigger(const FHitResult& hitPoint) override;
     void NotifyScivi_ImageUpdated();
+    // ----------------- InteractableActor interface -------------
+    virtual void OnReleasedByTrigger(const FHitResult& hitResult) override;
+    //eye track interaction
+    virtual void ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitResult) override;
+    //------------------------------------------------------------
 
     TArray<FAOI> AOIs;
     TArray<const FAOI*> SelectedAOIs;
