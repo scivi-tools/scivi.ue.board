@@ -158,7 +158,6 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         walls.Add(wall);
     }
     ReplaceObjectsOnScene(StimulusRemoteness);
-    initWS();
 }
 
 void AReadingTrackerGameMode::ReplaceObjectsOnScene(float radius)
