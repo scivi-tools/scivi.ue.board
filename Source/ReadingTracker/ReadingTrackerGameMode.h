@@ -104,6 +104,8 @@ protected:
 	void RecordingMenu_ClearNameForWall();
 	UFUNCTION()
 	void RecordingMenu_CreateList();
+	UFUNCTION()
+	void RecordingMenu_Cancel();
 	void SetRecordingMenuVisibility(bool new_visibility);
 
 //----------------------- SciVi networking --------------

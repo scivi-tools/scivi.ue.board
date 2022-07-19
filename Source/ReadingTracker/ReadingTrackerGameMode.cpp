@@ -129,6 +129,8 @@ void AReadingTrackerGameMode::NotifyInformantSpawned(ABaseInformant* _informant)
         btnReady->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::RecordingMenu_CreateList);
         auto btnClear = Cast<UButton>(root->GetWidgetFromName(TEXT("btnClear")));
         btnClear->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::RecordingMenu_ClearNameForWall);
+        auto btnCancel = Cast<UButton>(root->GetWidgetFromName(TEXT("btnCancel")));
+        btnCancel->OnClicked.AddDynamic(this, &AReadingTrackerGameMode::RecordingMenu_Cancel);
 
         auto btnRecord = Cast<UButton>(root->GetWidgetFromName(TEXT("btnRecord")));
         btnRecord->OnPressed.AddDynamic(informant, &ABaseInformant::StartRecording);
@@ -236,6 +238,11 @@ void AReadingTrackerGameMode::RecordingMenu_CreateList()
     auto root = uiRecordingMenu->GetWidget();
     auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
     CreateListOfWords(textBlock->GetText().ToString());
+}
+
+void AReadingTrackerGameMode::RecordingMenu_Cancel()
+{
+    SetRecordingMenuVisibility(false);
 }
 
 //------------- List of words -------------------
