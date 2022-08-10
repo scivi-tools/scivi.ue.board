@@ -395,7 +395,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
     }
 }
 
-void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI)
+void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, int AOI_index, const FString& AOI)
 {
     FString msg;
     FString ActionStr;
@@ -418,7 +418,8 @@ void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FS
         msg = FString::Printf(TEXT("\"WallLog\": {"
             "\"Action\": \"%s\","
             "\"Wall\": \"%s\","
-            "\"AOI\": \"%s\"}"), *ActionStr, *WallName, *AOI);
+            "\"AOI_index\": %i,"
+            "\"AOI\": \"%s\"}"), *ActionStr, *WallName, AOI_index, *AOI);
     }
     SendToSciVi(msg);
 }

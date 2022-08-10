@@ -102,8 +102,9 @@ void AWordListWall::AddAOI(const FAOI* aoi)
 		btnRemoveEntry->OnClicked.AddDynamic(this, &AWordListWall::OnClicked_RemoveEntry);
 		list->AddChild(entry);
 		entries.Add(btnRemoveEntry, entry);
+		AOI_indices.Add(btnRemoveEntry, aoi->id);
 		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-		GM->SendWallLogToSciVi(EWallLogAction::AddAOI, this->GetWallName(), aoi->name);
+		GM->SendWallLogToSciVi(EWallLogAction::AddAOI, this->GetWallName(), aoi->id, aoi->name);
 	}
 	else if (!IsValid(aoi->image))
 		UE_LOG(LogTemp, Display, TEXT("aoi->image isn't valid"));
@@ -141,11 +142,13 @@ void AWordListWall::OnClicked_RemoveEntry(URichButton* clickedButton, const FVec
 	{
 		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 		auto entry = entries[clickedButton];
-		auto entry_name = entry->GetName().Replace(TEXT("_Entry"), TEXT(""));
+		auto AOI_name = entry->GetName().Replace(TEXT("_Entry"), TEXT(""));
 		auto image = Cast<UImage>(entry->GetWidgetFromName(TEXT("AOI_Image")));
 		entry->RemoveFromParent();
 		entries.Remove(clickedButton);
-		GM->SendWallLogToSciVi(EWallLogAction::RemoveAOI, name, entry_name);
+		int AOI_index = AOI_indices[clickedButton];
+		AOI_indices.Remove(clickedButton);
+		GM->SendWallLogToSciVi(EWallLogAction::RemoveAOI, name, AOI_index, AOI_name);
 	}
 }
 

@@ -55,5 +55,6 @@ protected:
 	void OnClicked_RemoveEntry(URichButton* clickedButton, const FVector2D& clickPos);
 	bool bHiddenInGame = false;
 	TMap<const URichButton*, UUserWidget*> entries;//for fast searching of entry
+	TMap<const URichButton*, int> AOI_indices;
 	FString name = TEXT("List");
 };

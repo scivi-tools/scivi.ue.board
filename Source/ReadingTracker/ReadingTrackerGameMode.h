@@ -110,7 +110,7 @@ protected:
 
 //----------------------- SciVi networking --------------
 public:
-	void SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, const FString& AOI = TEXT(""));
+	void SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, int AOI_index = -1, const FString& AOI = TEXT(""));
 	void SendGazeToSciVi(const struct FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id);
 protected:
 	virtual void OnSciViMessageReceived(TSharedPtr<FJsonObject> msgJson) override;

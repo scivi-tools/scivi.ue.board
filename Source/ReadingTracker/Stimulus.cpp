@@ -190,8 +190,7 @@ void AStimulus::ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitPoint)
         auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
         FVector2D uv = sceneToBillboard(hitPoint.Location);
         int currentAOIIndex = -1;
-        if (!GM->informant->MC_Right->bHiddenInGame)
-            auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
+        auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
         GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
     }
     Super::ProcessEyeTrack(gaze, hitPoint);
