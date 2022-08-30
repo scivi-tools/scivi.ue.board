@@ -1,3 +1,4 @@
 [submodule "Plugins/VRExperimentsBase"]
 	path = Plugins/VRExperimentsBase
 	url = https://github.com/GoldNotch/VRExperimentsBase.git
+	update = merge # <-- for auto mergin with Main branch
