@@ -23,6 +23,11 @@
 			"Name": "NeuronLiveLink",
 			"Enabled": true,
 			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/3fd0aaf39c3643788c2462a5b5ae58be"
+		},
+		{
+			"Name": "BlueprintJson",
+			"Enabled": true,
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/content/f837e4835fbc434a853fe1ead2410b84"
 		}
 	]
 }
