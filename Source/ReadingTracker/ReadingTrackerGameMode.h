@@ -59,7 +59,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly)
-	int MaxWallsCount = 9;
+	int MaxWallsCount = 11;
 
 	//----------------- Scene ----------------------
 public:

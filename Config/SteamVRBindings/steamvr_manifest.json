@@ -152,7 +152,7 @@
 			"type": "boolean"
 		},
 		{
-			"name": "/actions/main/in/RTrigger",
+			"name": "/actions/main/in/RController_Trigger",
 			"type": "boolean"
 		},
 		{
@@ -433,7 +433,7 @@
 			"/actions/main/out/vibrateright": "Haptic (Right)",
 			"/actions/main/in/open_console": "Open Console",
 			"/actions/main/in/CustumCalib": "CustumCalib",
-			"/actions/main/in/RTrigger": "RTrigger",
+			"/actions/main/in/RController_Trigger": "RController_Trigger",
 			"/actions/main/in/Walking": "Walking",
 			"/actions/main/in/CameraMove_RightLeft axis": "CameraMove_RightLeft",
 			"/actions/main/in/CameraMove_UpDown axis": "CameraMove_UpDown",

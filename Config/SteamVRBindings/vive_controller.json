@@ -29,7 +29,7 @@
 					{
 						"click":
 						{
-							"output": "/actions/main/in/RTrigger"
+							"output": "/actions/main/in/RController_Trigger"
 						}
 					}
 				},

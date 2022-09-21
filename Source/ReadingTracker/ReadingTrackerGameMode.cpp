@@ -106,9 +106,6 @@ AReadingTrackerGameMode::AReadingTrackerGameMode(const FObjectInitializer& Objec
 void AReadingTrackerGameMode::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-            
-
-
 }
 
 // -------------------------- Scene modification ------------------
@@ -168,44 +165,42 @@ void AReadingTrackerGameMode::ReplaceObjectsOnScene(float radius)
     float player_Z = player_transform.GetLocation().Z; //player_height
     float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
     //place stimulus in front of informant
-    stimulus->SetActorLocation(player_transform.GetLocation());
-    stimulus->AddActorWorldOffset(FVector(0.0f, radius, -player_Z));
-    stimulus->SetActorRotation(player_transform.GetRotation());
-    stimulus->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
+    auto stimulus_transform = player_transform * FTransform(FRotator(0.0f, 180.0f, 0.0f),
+                                                            FVector(radius, 0.0f, -player_Z));
+    stimulus->SetActorTransform(stimulus_transform);
     //Place RecordingMenu
-    uiRecordingMenu->SetActorScale3D(FVector(0.15f));
-    uiRecordingMenu->SetActorLocation(player_transform.GetLocation());
-    uiRecordingMenu->AddActorWorldOffset(FVector(0.0f, RecordingMenuRemoteness, camera_Z - player_Z));
-    uiRecordingMenu->SetActorRotation(player_transform.GetRotation());
-    uiRecordingMenu->AddActorWorldRotation(FRotator(0.0f, -180.0f, 0.0f));
-    //Place CreateList Button
-    uiCreateListButton->SetActorLocation(stimulus->GetActorLocation());
-    uiCreateListButton->AddActorWorldOffset(FVector(0.0f, -10.0f, 345.0f));
-    uiCreateListButton->SetActorRotation(FRotator(-10.0f, 270.0f, 0.0f));
-
+    auto RecordingMenu_transform = player_transform * FTransform(FRotator(0.0f, 180.0f, 0.0f),
+                                                                    FVector(RecordingMenuRemoteness, 0.0f, camera_Z - player_Z * 0.15f),
+                                                                    FVector(0.15f));
+    uiRecordingMenu->SetActorTransform(RecordingMenu_transform);
     //it gets a BBox considering an object's rotation
     auto BB = stimulus->GetComponentsBoundingBox().GetExtent();//x - width, y - thickness, z - height
+    //Place CreateList Button
+    auto CreateListButton_transform = stimulus_transform * FTransform(FRotator(0.0f, 0.0f, 0.0f), 
+                                                                    FVector(0.0f, 0.0f, 2.0f * BB.Z + 45.0f));
+    uiCreateListButton->SetActorTransform(CreateListButton_transform);
 
     int n = 12;//2 * MaxWallsCount - 2;
     //place other walls around the informant
     float angle_per_wall = 2.0f * PI / (float)n;
     float angle = PI / 6.0f;
-    for (int i = 0; i < MaxWallsCount / 2; ++i, angle -= angle_per_wall)
+    for (int i = 0; i < MaxWallsCount / 2; ++i, angle += angle_per_wall)
     {
         float x_offset = FMath::Cos(angle) * radius;
-        float y_offset = FMath::Sin(angle) * radius + radius / 2.0f;
-        walls[2 * i]->SetActorLocation(player_transform.GetLocation() + FVector(x_offset, y_offset, -player_Z));
-        walls[2 * i]->SetActorRotation(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f));
+        float y_offset = FMath::Sin(angle) * radius + radius / 4.0f;
+        auto transform1 = player_transform * FTransform(FRotator(0.0f, 180 - FMath::RadiansToDegrees(angle), 0.0f),
+                                                        FVector(x_offset, -y_offset, -player_Z));
+        walls[2 * i]->SetActorTransform(transform1);
+        auto transform2 = player_transform * FTransform(FRotator(0.0f, 180 + FMath::RadiansToDegrees(angle), 0.0f),
+                                                        FVector(x_offset, y_offset, -player_Z));
 
-        walls[2 * i + 1]->SetActorLocation(player_transform.GetLocation() + FVector(-x_offset, y_offset, -player_Z));
-        walls[2 * i + 1]->SetActorRotation(FRotator(0.0f, -FMath::RadiansToDegrees(angle), 0.0f));
+        walls[2 * i + 1]->SetActorTransform(transform2);
     }
 
     if (MaxWallsCount % 2 == 1)
     {
-        int i = MaxWallsCount - 1;
-        walls[i]->SetActorLocation(player_transform.GetLocation() + FVector(0.0f, -radius / 2.0f, -player_Z));
-        walls[i]->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+        auto transform = player_transform * FTransform(FVector(-radius, 0.0f, -player_Z));
+        walls[MaxWallsCount - 1]->SetActorTransform(transform);
     }
 
     //So strange algorithm for placing the walls is for sorting the walls by remoteness from stimulus.
@@ -219,8 +214,12 @@ void AReadingTrackerGameMode::SetRecordingMenuVisibility(bool new_visibility)
     auto& player_transform = informant->GetTransform();
     float player_Z = player_transform.GetLocation().Z; //player_height
     float camera_Z = informant->CameraComponent->GetComponentLocation().Z;//camera height
-    uiRecordingMenu->SetActorLocation(player_transform.GetLocation());
-    uiRecordingMenu->AddActorWorldOffset(FVector(0.0f, RecordingMenuRemoteness, camera_Z - player_Z));
+
+    auto RecordingMenu_transform = player_transform * FTransform(FRotator(0.0f, 180.0f, 0.0f),
+                                                                FVector(RecordingMenuRemoteness, 0.0f, camera_Z - player_Z * 0.15f),
+                                                                FVector(0.15f));
+    uiRecordingMenu->SetActorTransform(RecordingMenu_transform);
+
 
     uiRecordingMenu->SetVisibility(new_visibility);
     RecordingMenu_ClearNameForWall();

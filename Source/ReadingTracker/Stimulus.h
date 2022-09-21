@@ -42,6 +42,9 @@ public:
 
     TArray<FAOI> AOIs;
     TArray<const FAOI*> SelectedAOIs;
+#ifdef EYE_DEBUG
+    FVector2D GazeUV;
+#endif
 
     UFUNCTION(BlueprintCallable)
     void customCalibrate();

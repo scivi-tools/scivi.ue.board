@@ -10,7 +10,9 @@
 #include "SRanipalEye_Core.h"
 #include "IXRTrackingSystem.h"
 #include "Engine/CanvasRenderTarget2D.h"
-
+#include "DrawDebugHelpers.h"
+#ifdef EYE_DEBUG
+#endif
 //custom calibration
 static const constexpr int TARGET_MAX_RADIUS = 15;
 static const constexpr int TARGET_MIN_RADIUS = 7;
@@ -90,6 +92,7 @@ AStimulus::AStimulus()
     m_calibIndex = 0;
     m_needsCustomCalib = false;
     m_customCalibSamples = 0;
+    bSendLogsToSciVi = false;
 }
 
 void AStimulus::BeginPlay()
@@ -163,7 +166,7 @@ void AStimulus::ClearSelectedAOIs()
     //check if gaze im stimulus => then calc uv
     FHitResult hitPoint(ForceInit);
     const float ray_radius = 1.0f;
-    const float ray_length = GM->informant->GetInteractionDistance();
+    const float ray_length = GM->informant->InteractionDistance;
     if (GM->RayTrace(GM->informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
         if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
@@ -185,6 +188,7 @@ void AStimulus::Reset()
 
 void AStimulus::ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitPoint)
 {
+    Super::ProcessEyeTrack(gaze, hitPoint);
     if (hitPoint.Component == Stimulus)
     {
         auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
@@ -192,12 +196,18 @@ void AStimulus::ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitPoint)
         int currentAOIIndex = -1;
         auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
         GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
+#ifdef EYE_DEBUG
+        GazeUV = uv;
+        DrawDebugPoint(GetWorld(), hitPoint.Location, 25.0f, FColor::Green);
+        UpdateContours();
+#endif
     }
-    Super::ProcessEyeTrack(gaze, hitPoint);
 }
 
 void AStimulus::OnReleasedByTrigger(const FHitResult& hitPoint)
 {
+    Super::OnReleasedByTrigger(hitPoint);
+    //DrawDebugPoint(GetWorld(), hitPoint.Location, 25.0f, FColor::Red);
     if (hitPoint.Component == Stimulus)
     {
 #ifdef COLLECCT_ANGULAR_ERROR
@@ -251,7 +261,6 @@ void AStimulus::OnReleasedByTrigger(const FHitResult& hitPoint)
         UpdateContours();
         GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
     }
-    Super::OnReleasedByTrigger(hitPoint);
 }
 
 void AStimulus::NotifyScivi_ImageUpdated()
@@ -262,7 +271,7 @@ void AStimulus::NotifyScivi_ImageUpdated()
 
     FHitResult hitPoint(ForceInit);
     const float ray_radius = 1.0f;
-    const float ray_length = GM->informant->GetInteractionDistance();
+    const float ray_length = GM->informant->InteractionDistance;
     if (GM->RayTrace(GM->informant, gaze.origin, gaze.origin + gaze.direction * ray_length, hitPoint))
     {
         if (hitPoint.Actor == this && hitPoint.Component == Stimulus)
@@ -337,6 +346,10 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
 
     if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
         fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * image->GetSizeX(), m_customCalibTarget.location.Y * image->GetSizeY()), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
+
+#ifdef EYE_DEBUG
+    fillCircle(cvs, GazeUV * FVector2D(image->GetSizeX(), image->GetSizeY()), 5.0f, FColor::Black);
+#endif
 }
 
 //used only in calibration
