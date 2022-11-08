@@ -49,9 +49,6 @@ public:
     UFUNCTION(BlueprintCallable)
     void customCalibrate();
 
-    UPROPERTY(EditAnywhere, BlueprintReadonly, Category = Wall)
-    USceneComponent* DefaultSceneRoot;
-
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Wall)
     class UWidgetComponent* Stimulus;
 

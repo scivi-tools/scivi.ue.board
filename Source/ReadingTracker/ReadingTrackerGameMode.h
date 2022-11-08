@@ -108,6 +108,9 @@ protected:
 	void RecordingMenu_Cancel();
 	void SetRecordingMenuVisibility(bool new_visibility);
 
+private:
+	void ReplaceRecordingMenu();
+
 //----------------------- SciVi networking --------------
 public:
 	void SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, int AOI_index = -1, const FString& AOI = TEXT(""));

@@ -71,9 +71,6 @@ AStimulus::AStimulus()
     base_material = BoardMaterialAsset.Object;
     DefaultTexture = DefaultTextureAsset.Object;
 
-    DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-    RootComponent = DefaultSceneRoot;
-
     wall = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Wall"));
     wall->SetupAttachment(RootComponent);
     wall->SetStaticMesh(CubeAsset.Object);
