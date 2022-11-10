@@ -393,6 +393,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 		}
 		if (IsValid(texture))
 			stimulus->UpdateStimulus(texture, sx, sy, AOIs, true);
+		UE_LOG(LogTemp, Display, TEXT("New Image parsed"));
 	}
 }
 
