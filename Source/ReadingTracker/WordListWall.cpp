@@ -11,6 +11,24 @@
 #include "Blueprint/WidgetTree.h"
 #include "ReadingTrackerGameMode.h"
 
+//UTexture2D* CopyTexture(const UTexture2D& source)
+//{
+//	auto result = UTexture2D::CreateTransient(source.GetSizeX(), source.GetSizeY(), PF_B8G8R8A8, FName(FGuid::NewGuid().ToString()));
+//	auto& src_bulk = source.PlatformData->Mips[0].BulkData;
+//	auto& dst_bulk = result->PlatformData->Mips[0].BulkData;
+//
+//	auto src_pixels = reinterpret_cast<const FColor*>(src_bulk.LockReadOnly());
+//	auto dst_pixels = reinterpret_cast<FColor*>(dst_bulk.Lock(LOCK_READ_WRITE));
+//	for (int32 y = 0; y < source.GetSizeY(); ++y)
+//		FMemory::Memcpy(dst_pixels + y * result->GetSizeX(),
+//			src_pixels + y * source.GetSizeX(),
+//			source.GetSizeX() * sizeof(FColor));
+//	src_bulk.Unlock();
+//	dst_bulk.Unlock();
+//	result->UpdateResource();
+//	return result;
+//}
+
 // Sets default values
 AWordListWall::AWordListWall()
 {
@@ -88,7 +106,7 @@ void AWordListWall::SetWallName(const FString& new_name)
 void AWordListWall::AddAOI(const FAOI* aoi)
 {
 	auto list = Cast<UScrollBox>(List->GetWidget()->GetWidgetFromName(TEXT("List")));
-	auto entry_name = FName(aoi->name + TEXT("_Entry"));
+	auto entry_name = FName(aoi->name + "_" + FGuid::NewGuid().ToString() + TEXT("_Entry"));
 	//if list doesnt contains an entry then insert
 	auto childs = list->GetAllChildren();
 
@@ -142,7 +160,10 @@ void AWordListWall::OnClicked_RemoveEntry(URichButton* clickedButton, const FVec
 	{
 		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 		auto entry = entries[clickedButton];
-		auto AOI_name = entry->GetName().Replace(TEXT("_Entry"), TEXT(""));
+		auto AOI_name = entry->GetName();
+		int32 index;
+		AOI_name.FindChar(L'_', index);
+		AOI_name.RemoveAt(index, AOI_name.Len() - index + 1);
 		auto image = Cast<UImage>(entry->GetWidgetFromName(TEXT("AOI_Image")));
 		entry->RemoveFromParent();
 		entries.Remove(clickedButton);
@@ -151,4 +172,6 @@ void AWordListWall::OnClicked_RemoveEntry(URichButton* clickedButton, const FVec
 		GM->SendWallLogToSciVi(EWallLogAction::RemoveAOI, name, AOI_index, AOI_name);
 	}
 }
+
+
 
