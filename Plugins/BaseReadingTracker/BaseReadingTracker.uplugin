@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "BaseReadingTracker",
+	"Description": "Base classes for reading tracker",
+	"Category": "Other",
+	"CreatedBy": "JohnCorn",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "BaseReadingTracker",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
