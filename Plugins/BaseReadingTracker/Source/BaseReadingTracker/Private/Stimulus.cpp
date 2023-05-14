@@ -197,6 +197,31 @@ void AStimulus::ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitPoint)
 	}
 }
 
+void AStimulus::InFocusByController(const FHitResult& hit_result)
+{
+	Super::InFocusByController(hit_result);
+	if (hit_result.Component == Stimulus)
+	{
+		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+		int currentAOIIndex = -1;
+		auto m_laser = sceneToBillboard(hit_result.Location);
+		if (!GM->informant->MC_Right->bHiddenInGame)
+		{
+			auto selectedAOI = findAOI(FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), currentAOIIndex);
+			if (selectedAOI)
+			{
+				hoveredAOI = selectedAOI;
+				OnHoverAOI(*hoveredAOI);
+			}
+			else if (hoveredAOI)
+			{
+				OnLeaveAOI(*hoveredAOI);
+				hoveredAOI = nullptr;
+			}
+		}
+	}
+}
+
 void AStimulus::OnPressedByTrigger(const FHitResult& hitPoint)
 {
 	Super::OnPressedByTrigger(hitPoint);

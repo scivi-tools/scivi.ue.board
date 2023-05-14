@@ -215,10 +215,10 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 			auto nameField = aoi_text->AsObject()->TryGetField("name");
 			if (nameField)
 			{
-				auto name_str = nameField->AsString();
-				if (counts.Contains(name_str)) counts[name_str]++;
-				else counts.Add(name_str, 0);
-				aoi.name = FString::Printf(TEXT("%s_%i"), *name_str, counts[name_str]);
+				aoi.name = nameField->AsString();
+				if (counts.Contains(aoi.name)) counts[aoi.name]++;
+				else counts.Add(aoi.name, 0);
+				aoi.order = counts[aoi.name];
 			}
 			auto pathField = aoi_text->AsObject()->TryGetField("path");
 			if (pathField)

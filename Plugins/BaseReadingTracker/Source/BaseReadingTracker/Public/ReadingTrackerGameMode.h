@@ -14,16 +14,20 @@ USTRUCT(BlueprintType)
 struct FAOI
 {
 	GENERATED_BODY()
-		int id;
-	UPROPERTY()
-		TArray<FString> audio_desciptions;
+	int id;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
+	TArray<FString> audio_desciptions;
 	int last_played_description = -1;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
 	FString name;
 	UPROPERTY()
-		TArray<FVector2D> path;
+	TArray<FVector2D> path;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
 	FBox2D bbox;
-	UPROPERTY()
-		UTexture2D* image;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
+	UTexture2D* image;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
+	int32 order;
 	inline bool IsPointInside(const FVector2D& pt) const
 	{
 		if (!bbox.IsInside(pt)) return false;

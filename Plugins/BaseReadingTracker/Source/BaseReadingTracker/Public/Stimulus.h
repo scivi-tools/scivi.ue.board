@@ -32,16 +32,22 @@ public:
     void Reset();
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     float StimulusMargin = 20.0f;
+    UFUNCTION(BlueprintImplementableEvent)
+    void OnHoverAOI(const FAOI& aoi);
+    UFUNCTION(BlueprintImplementableEvent)
+    void OnLeaveAOI(const FAOI& aoi);
 
     void NotifyScivi_ImageUpdated();
     // ----------------- InteractableActor interface -------------
     virtual void OnPressedByTrigger(const FHitResult& hitResult) override;
     //eye track interaction
     virtual void ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitResult) override;
+    virtual void InFocusByController(const FHitResult& hit_result) override;
     //------------------------------------------------------------
 
     TArray<FAOI> AOIs;
     TArray<const FAOI*> SelectedAOIs;
+    const FAOI* hoveredAOI = nullptr;
 #ifdef EYE_DEBUG
     FVector2D GazeUV;
 #endif

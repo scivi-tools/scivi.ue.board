@@ -16,13 +16,13 @@ class APE_Informant : public ABaseInformant
 protected:
 	virtual void OnRecordBatch(const int16* AudioData, int NumChannels, int NumSamples, int SampleRate) override;
 	virtual void OnFinishRecord() override;
-	FString record_filename;
+	FString RecordFilename;
 	bool header_saved = false;
 
-	
+	UFUNCTION(BlueprintCallable)
+	void InitRecording();
+
 public:
-	virtual void OnExperimentStarted(const FString& InformantName) override;
-	virtual void OnExperimentFinished() override;
 	virtual void OnRTriggerReleased() override
 	{
 		Super::OnRTriggerReleased();

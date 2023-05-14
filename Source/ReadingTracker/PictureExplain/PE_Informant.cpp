@@ -33,30 +33,22 @@ void APE_Informant::OnRecordBatch(const int16* AudioData, int NumChannels, int N
 		header.subchunk2Size = 0x7FFFFFFF;
 		header.chunkSize = header.subchunk2Size + sizeof(WAVHEADER) - 8;
 		TArrayView<uint8> arr(reinterpret_cast<uint8*>(&header), sizeof(header));
-		FFileHelper::SaveArrayToFile(arr, *record_filename, &IFileManager::Get(), FILEWRITE_Append);
+		FFileHelper::SaveArrayToFile(arr, *RecordFilename, &IFileManager::Get(), FILEWRITE_Append);
 		header_saved = true;
 	}
 
 	TArrayView<const uint8> view(reinterpret_cast<const uint8*>(AudioData), NumChannels * NumSamples * sizeof(int16));
-	FFileHelper::SaveArrayToFile(view, *record_filename, &IFileManager::Get(), FILEWRITE_Append);
+	FFileHelper::SaveArrayToFile(view, *RecordFilename, &IFileManager::Get(), FILEWRITE_Append);
 }
 
 void APE_Informant::OnFinishRecord()
 {
 }
 
-void APE_Informant::OnExperimentStarted(const FString& InformantName)
+void APE_Informant::InitRecording()
 {
-	Super::OnExperimentStarted(InformantName);
+	auto GM = GetWorld()->GetAuthGameMode<AVRGameModeBase>();
 	auto t = FDateTime::Now();
 	int64 timestamp = t.ToUnixTimestamp() * 1000 + t.GetMillisecond();
-	record_filename = FString::Printf(TEXT("%s/Records/%lli_%s.wav"), *FPaths::ProjectDir(), timestamp, *InformantName);
-	StartRecording();
-}
-
-void APE_Informant::OnExperimentFinished()
-{
-	Super::OnExperimentFinished();
-	StopRecording();
-	/*delete impl;*/
+	RecordFilename = FString::Printf(TEXT("%s/Records/%lli_%s.wav"), *FPaths::ProjectDir(), timestamp, *GM->InformantName);
 }
