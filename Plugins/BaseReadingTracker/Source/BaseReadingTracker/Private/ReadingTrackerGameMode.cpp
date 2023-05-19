@@ -241,7 +241,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 			CopyTexture2DFragment(aoi.image, texture, start.X, start.Y, size.X, size.Y);
 
 			// find audio desciptions
-			auto dir = FPaths::ProjectDir() + FString::Printf(TEXT("/AudioDescriptions/%s"), *nameField->AsString());
+			auto dir = FPaths::ProjectDir() + FString::Printf(TEXT("/../AudioDescriptions/%s"), *nameField->AsString());
 			if (FPaths::FileExists(dir + TEXT(".mp3")))
 				aoi.audio_desciptions.Add(dir + TEXT(".mp3"));
 			else if (FPaths::DirectoryExists(dir))

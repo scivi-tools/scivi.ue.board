@@ -14,10 +14,14 @@ class APE_Informant : public ABaseInformant
 {
 	GENERATED_BODY()
 protected:
-	virtual void OnRecordBatch(const int16* AudioData, int NumChannels, int NumSamples, int SampleRate) override;
+	virtual void OnRecordBatch(const int16* AudioData, int _NumChannels, int NumSamples, int _SampleRate) override;
 	virtual void OnFinishRecord() override;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
 	FString RecordFilename;
-	bool header_saved = false;
+
+	TArray64<int16> recordedPCM;
+	int SampleRate;
+	int NumChannels;
 
 	UFUNCTION(BlueprintCallable)
 	void InitRecording();

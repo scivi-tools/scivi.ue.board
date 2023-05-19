@@ -21,28 +21,27 @@ struct WAVHEADER
 	int subchunk2Size = 0;
 };
 
-void APE_Informant::OnRecordBatch(const int16* AudioData, int NumChannels, int NumSamples, int SampleRate)
+void APE_Informant::OnRecordBatch(const int16* AudioData, int _NumChannels, int NumSamples, int _SampleRate)
 {
-	if (!header_saved)
-	{
-		WAVHEADER header;
-		header.numChannels = NumChannels;
-		header.sampleRate = SampleRate;
-		header.byteRate = NumChannels * SampleRate * sizeof(int16);
-		header.blockAlign = NumChannels * sizeof(int16);
-		header.subchunk2Size = 0x7FFFFFFF;
-		header.chunkSize = header.subchunk2Size + sizeof(WAVHEADER) - 8;
-		TArrayView<uint8> arr(reinterpret_cast<uint8*>(&header), sizeof(header));
-		FFileHelper::SaveArrayToFile(arr, *RecordFilename, &IFileManager::Get(), FILEWRITE_Append);
-		header_saved = true;
-	}
-
-	TArrayView<const uint8> view(reinterpret_cast<const uint8*>(AudioData), NumChannels * NumSamples * sizeof(int16));
-	FFileHelper::SaveArrayToFile(view, *RecordFilename, &IFileManager::Get(), FILEWRITE_Append);
+	NumChannels = _NumChannels;
+	SampleRate = _SampleRate;
+	recordedPCM.Append(AudioData, NumSamples);
 }
 
 void APE_Informant::OnFinishRecord()
 {
+	WAVHEADER header;
+	header.numChannels = NumChannels;
+	header.sampleRate = SampleRate;
+	header.byteRate = header.numChannels * header.sampleRate * sizeof(int16);
+	header.blockAlign = header.numChannels * sizeof(int16);
+	header.subchunk2Size = recordedPCM.Num() * sizeof(int16) / header.numChannels;
+	header.chunkSize = header.subchunk2Size + sizeof(WAVHEADER) - 8;
+	TArrayView<uint8> header_view(reinterpret_cast<uint8*>(&header), sizeof(header));
+	FFileHelper::SaveArrayToFile(header_view, *RecordFilename);
+	TArrayView<uint8> pcm_view(reinterpret_cast<uint8*>(recordedPCM.GetData()), recordedPCM.Num() * sizeof(int16));
+	FFileHelper::SaveArrayToFile(pcm_view, *RecordFilename, &IFileManager::Get(), FILEWRITE_Append);
+	recordedPCM.Empty(recordedPCM.Num());
 }
 
 void APE_Informant::InitRecording()
@@ -51,4 +50,5 @@ void APE_Informant::InitRecording()
 	auto t = FDateTime::Now();
 	int64 timestamp = t.ToUnixTimestamp() * 1000 + t.GetMillisecond();
 	RecordFilename = FString::Printf(TEXT("%s/Records/%lli_%s.wav"), *FPaths::ProjectDir(), timestamp, *GM->InformantName);
+	recordedPCM.Empty();
 }
