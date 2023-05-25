@@ -49,7 +49,7 @@ void APE_Informant::InitRecording()
 	auto GM = GetWorld()->GetAuthGameMode<AVRGameModeWithSciViBase>();
 	auto t = FDateTime::Now();
 	int64 timestamp = t.ToUnixTimestamp() * 1000 + t.GetMillisecond();
-	auto msg = FString::Printf(TEXT("StartExplainPicture: %lli"), timestamp);
+	auto msg = FString::Printf(TEXT("\"StartExplainPicture\": %lli"), timestamp);
 	RecordFilename = FString::Printf(TEXT("%s/Records/%s.wav"), *FPaths::ProjectDir(), *GM->InformantName);
 	GM->SendToSciVi(msg);
 	recordedPCM.Empty();
