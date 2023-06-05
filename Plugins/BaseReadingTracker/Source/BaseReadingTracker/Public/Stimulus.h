@@ -13,7 +13,13 @@
 //#define COLLECCT_ANGULAR_ERROR
 //#define MEASURE_ANGULAR_SIZES
 
-
+UENUM()
+enum class AOISelectionStrategy
+{
+    JustClick = 0     UMETA(DisplayName = "Just click"),
+    FromClickToClick      UMETA(DisplayName = "From click to click"),
+    Total
+};
 
 UCLASS()
 class BASEREADINGTRACKER_API AStimulus : public AInteractableActor
@@ -40,6 +46,7 @@ public:
     void NotifyScivi_ImageUpdated();
     // ----------------- InteractableActor interface -------------
     virtual void OnPressedByTrigger(const FHitResult& hitResult) override;
+    virtual void OnReleasedByTrigger(const FHitResult& hitResult) override;
     //eye track interaction
     virtual void ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitResult) override;
     virtual void InFocusByController(const FHitResult& hit_result) override;
@@ -48,6 +55,9 @@ public:
     TArray<FAOI> AOIs;
     TArray<const FAOI*> SelectedAOIs;
     const FAOI* hoveredAOI = nullptr;
+    UPROPERTY(BlueprintReadonly, EditAnywhere)
+    AOISelectionStrategy SelectionStrategy = AOISelectionStrategy::FromClickToClick;
+
 #ifdef EYE_DEBUG
     FVector2D GazeUV;
 #endif
@@ -76,6 +86,8 @@ protected:
     void fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, const FLinearColor& color) const;
     void drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const FAOI* aoi) const;
     void toggleSelectedAOI(const FAOI* aoi);
+    inline int32 IndexOfAOI(const FAOI* aoi) const 
+    {  return aoi - AOIs.GetData();   }
 
     //collision detection
     FAOI* findAOI(const FVector2D& pt, int& out_index) const;

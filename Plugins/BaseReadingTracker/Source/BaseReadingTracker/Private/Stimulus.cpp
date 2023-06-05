@@ -272,8 +272,15 @@ void AStimulus::OnPressedByTrigger(const FHitResult& hitPoint)
 			auto selectedAOI = findAOI(FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), currentAOIIndex);
 			if (selectedAOI)
 			{
+				if (SelectionStrategy == AOISelectionStrategy::JustClick && SelectedAOIs.Num() > 0)
+				{
+					toggleSelectedAOI(SelectedAOIs[0]);
+					GM->SendGazeToSciVi(gaze, m_laser, IndexOfAOI(SelectedAOIs[0]), TEXT("UNSELECT"));
+				}
+
 				toggleSelectedAOI(selectedAOI);
 				GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
+
 				if (selectedAOI->audio_desciptions.Num() > 0)
 				{
 					if (selectedAOI->last_played_description >= selectedAOI->audio_desciptions.Num() - 1)
@@ -284,7 +291,32 @@ void AStimulus::OnPressedByTrigger(const FHitResult& hitPoint)
 			}
 		}
 		UpdateContours();
-		GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELD"));
+		GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_PRESS"));
+	}
+}
+
+void AStimulus::OnReleasedByTrigger(const FHitResult& hitResult)
+{
+	Super::OnReleasedByTrigger(hitResult);
+	if (SelectionStrategy == AOISelectionStrategy::JustClick && SelectedAOIs.Num() > 0)
+	{
+		if (hitResult.Component == Stimulus)
+		{
+			auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+			FGaze gaze;
+			GM->informant->GetGaze(gaze);
+			auto m_laser = sceneToBillboard(hitResult.Location);
+			int currentAOIIndex = -1;
+			if (!GM->informant->MC_Right->bHiddenInGame)
+			{
+				auto selectedAOI = SelectedAOIs[0];
+				currentAOIIndex = IndexOfAOI(selectedAOI);
+				toggleSelectedAOI(SelectedAOIs[0]);
+				GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_UNSELECT"));
+			}
+			UpdateContours();
+			GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELEASE"));
+		}
 	}
 }
 
