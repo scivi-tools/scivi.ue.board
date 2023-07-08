@@ -109,67 +109,6 @@ void AReadingTrackerGameMode::NotifyStimulustSpawned(AStimulus* _stimulus)
 	stimulus = _stimulus;
 }
 
-//------------- Recording Menu -------------------
-
-
-
-void AReadingTrackerGameMode::RecordingMenu_CreateList()
-{
-	//auto root = uiRecordingMenu->GetWidget();
-	//auto textBlock = Cast<UEditableText>(root->GetWidgetFromName(TEXT("textNewName")));
-	////CreateListOfWords(textBlock->GetText().ToString());
-}
-
-
-//------------- List of words -------------------
-//void AReadingTrackerGameMode::CreateListOfWords(const FString& wall_name)
-//{
-//	int visible_count = 0;
-//	for (auto wall : walls)
-//	{
-//		if (wall->IsHiddenInGame())
-//		{
-//			wall->SetVisibility(true);
-//			wall->SetWallName(wall_name);
-//			SendWallLogToSciVi(EWallLogAction::NewWall, wall_name);
-//			break;
-//		}
-//		else ++visible_count;
-//	}
-//	SetRecordingMenuVisibility(false);
-//
-//	if (visible_count == MaxWallsCount - 1)
-//		uiCreateListButton->SetEnabled(false);
-//}
-//
-//void AReadingTrackerGameMode::DeleteList(AWordListWall* const wall)
-//{
-//	if (IsValid(wall))
-//	{
-//		wall->SetVisibility(false);
-//		wall->ClearList();
-//		SendWallLogToSciVi(EWallLogAction::DeleteWall, wall->GetWallName());
-//		uiCreateListButton->SetEnabled(true);
-//	}
-//}
-//
-//void AReadingTrackerGameMode::DeleteAllLists()
-//{
-//	for (auto wall : walls)
-//		if (!wall->IsHiddenInGame())
-//			DeleteList(wall);
-//}
-//
-//void AReadingTrackerGameMode::AddAOIsToList(AWordListWall* const wall)
-//{
-//	for (auto aoi : stimulus->SelectedAOIs)
-//	{
-//		wall->AddAOI(aoi);
-//	}
-//	//clear selection on stimulus
-//	stimulus->ClearSelectedAOIs();
-//}
-
 //----------- Scivi networking -------------------
 
 void AReadingTrackerGameMode::OnSciViMessageReceived(TSharedPtr<FJsonObject> msgJson)
@@ -205,55 +144,55 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 		float sx = json->GetNumberField("scaleX");
 		float sy = json->GetNumberField("scaleY");
 		UTexture2D* texture = loadTexture2DFromBytes(img, fmt);
-		TArray<FAOI> AOIs;
+		TArray<UAOI*> AOIs;
 		TMap<FString, int> counts;
 		int last_id = 0;
 		for (auto& aoi_text : json->GetArrayField("AOIs"))
 		{
-			FAOI aoi;
-			aoi.id = last_id++;
+			UAOI* aoi = NewObject<UAOI>(stimulus, UAOI::StaticClass(), NAME_Default);
+			aoi->id = last_id++;
 			auto nameField = aoi_text->AsObject()->TryGetField("name");
 			if (nameField)
 			{
-				aoi.name = nameField->AsString();
-				if (counts.Contains(aoi.name)) counts[aoi.name]++;
-				else counts.Add(aoi.name, 0);
-				aoi.order = counts[aoi.name];
+				aoi->name = nameField->AsString();
+				if (counts.Contains(aoi->name)) counts[aoi->name]++;
+				else counts.Add(aoi->name, 0);
+				aoi->order = counts[aoi->name];
 			}
 			auto pathField = aoi_text->AsObject()->TryGetField("path");
 			if (pathField)
 			{
 				auto& path = pathField->AsArray();
 				for (auto& point : path)
-					aoi.path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
+					aoi->path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
 			}
 			auto bboxField = aoi_text->AsObject()->TryGetField("bbox");
 			if (bboxField)
 			{
 				auto& bbox = bboxField->AsArray();
-				aoi.bbox = FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
+				aoi->bbox = FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
 					FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber()));
 			}
-			auto size = aoi.bbox.GetSize();
-			auto start = aoi.bbox.Min;
-			aoi.image = UTexture2D::CreateTransient(size.X, size.Y);
-			aoi.image->AddToRoot();
-			CopyTexture2DFragment(aoi.image, texture, start.X, start.Y, size.X, size.Y);
+			auto size = aoi->bbox.GetSize();
+			auto start = aoi->bbox.Min;
+			aoi->image = UTexture2D::CreateTransient(size.X, size.Y);
+			aoi->image->AddToRoot();
+			CopyTexture2DFragment(aoi->image, texture, start.X, start.Y, size.X, size.Y);
 
 			// find audio desciptions
 			auto dir = FPaths::ProjectDir() + FString::Printf(TEXT("/../AudioDescriptions/%s"), *nameField->AsString());
 			if (FPaths::FileExists(dir + TEXT(".mp3")))
-				aoi.audio_desciptions.Add(dir + TEXT(".mp3"));
+				aoi->audio_desciptions.Add(dir + TEXT(".mp3"));
 			else if (FPaths::DirectoryExists(dir))
 			{
 				IFileManager::Get().IterateDirectoryStat(*dir, [&aoi](const TCHAR* filename, const FFileStatData& data)
 					{
-						aoi.audio_desciptions.Add(filename);
+						aoi->audio_desciptions.Add(filename);
 						return true;
 					});
 			}
 			else
-				UE_LOG(LogTemp, Display, TEXT("No audio description for %s AOI"), *aoi.name);
+				UE_LOG(LogTemp, Display, TEXT("No audio description for %s AOI"), *aoi->name);
 
 			AOIs.Add(aoi);
 		}

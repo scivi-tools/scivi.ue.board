@@ -118,7 +118,7 @@ void AStimulus::BeginPlay()
 }
 
 void AStimulus::UpdateStimulus(const UTexture2D* texture, float sx, float sy,
-	const TArray<FAOI>& newAOIs, bool notify_scivi)
+	const TArray<UAOI*>& newAOIs, bool notify_scivi)
 {
 	AOIs = newAOIs;
 	SelectedAOIs.Empty();
@@ -150,6 +150,14 @@ void AStimulus::UpdateContours()
 	m_dynContour->UpdateResource();
 }
 
+TArray<const UAOI*> AStimulus::GetSelectedAOIs() const
+{
+	TArray<const UAOI*> result;
+	for (auto* aoi : SelectedAOIs)
+		result.Add(aoi);
+	return result;
+}
+
 void AStimulus::ClearSelectedAOIs()
 {
 	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
@@ -167,7 +175,7 @@ void AStimulus::ClearSelectedAOIs()
 	}
 	for (auto selected_aoi : SelectedAOIs)
 	{
-		int aoi_index = selected_aoi - AOIs.GetData();
+		int aoi_index = IndexOfAOI(selected_aoi);
 		GM->SendGazeToSciVi(gaze, uv, aoi_index, TEXT("SELECT"));//this unselect selected in sciVi
 	}
 	SelectedAOIs.Empty();
@@ -211,11 +219,11 @@ void AStimulus::InFocusByController(const FHitResult& hit_result)
 			if (selectedAOI)
 			{
 				hoveredAOI = selectedAOI;
-				OnHoverAOI(*hoveredAOI);
+				OnHoverAOI(hoveredAOI);
 			}
 			else if (hoveredAOI)
 			{
-				OnLeaveAOI(*hoveredAOI);
+				OnLeaveAOI(hoveredAOI);
 				hoveredAOI = nullptr;
 			}
 		}
@@ -278,7 +286,7 @@ void AStimulus::OnPressedByTrigger(const FHitResult& hitPoint)
 					GM->SendGazeToSciVi(gaze, m_laser, IndexOfAOI(SelectedAOIs[0]), TEXT("UNSELECT"));
 				}
 
-				toggleSelectedAOI(selectedAOI);
+				toggleSelectedAOI(const_cast<const UAOI*>(selectedAOI));
 				GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("SELECT"));
 
 				if (selectedAOI->audio_desciptions.Num() > 0)
@@ -351,7 +359,7 @@ void AStimulus::customCalibrate()
 
 //------------ Draw functions ------------
 
-void AStimulus::toggleSelectedAOI(const FAOI* aoi)
+void AStimulus::toggleSelectedAOI(const UAOI* aoi)
 {
 	if (SelectedAOIs.Contains(aoi))
 		SelectedAOIs.Remove(aoi);
@@ -377,7 +385,7 @@ void AStimulus::fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, con
 	cvs->K2_DrawPolygon(nullptr, pos, FVector2D(radius), 16, color);
 }
 
-void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const FAOI* aoi) const
+void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const UAOI* aoi) const
 {
 	FVector2D pt = aoi->path[0];
 	for (int i = 1, n = aoi->path.Num(); i < n; ++i)
@@ -427,15 +435,15 @@ FVector2D AStimulus::sceneToBillboard(const FVector& pos) const
 }
 
 //------------------------ Collision detection -----------------------
-FAOI* AStimulus::findAOI(const FVector2D& pt, int& out_index) const
+UAOI* AStimulus::findAOI(const FVector2D& pt, int& out_index) const
 {
 	out_index = -1;
-	FAOI* result = nullptr;
+	UAOI* result = nullptr;
 	for (int i = 0; i < AOIs.Num(); ++i)
-		if (AOIs[i].IsPointInside(pt) && (!result || result->bbox.GetArea() > AOIs[i].bbox.GetArea()))
+		if (AOIs[i]->IsPointInside(pt) && (!result || result->bbox.GetArea() > AOIs[i]->bbox.GetArea()))
 		{
 			out_index = i;
-			result = (FAOI*)(AOIs.GetData() + i);
+			result = (UAOI*)(AOIs.GetData() + i);
 		}
 	return result;
 }

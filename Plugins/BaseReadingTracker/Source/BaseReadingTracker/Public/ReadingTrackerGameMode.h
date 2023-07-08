@@ -10,24 +10,29 @@
 static const ECollisionChannel Stimulus_Channel = ECollisionChannel::ECC_GameTraceChannel1;
 static const ECollisionChannel Floor_Channel = ECollisionChannel::ECC_WorldStatic;
 
-USTRUCT(BlueprintType)
-struct FAOI
+UCLASS(BlueprintType)
+class BASEREADINGTRACKER_API UAOI : public UObject
 {
 	GENERATED_BODY()
-	int id;
+
+public:
+	UAOI() = default;
+	UAOI(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer) {}
+
+	int id = -1;
 	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
 	TArray<FString> audio_desciptions;
 	int last_played_description = -1;
 	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
-	FString name;
+	FString name = TEXT("no name");
 	UPROPERTY()
-	TArray<FVector2D> path;
+	TArray<FVector2D> path;//polygon
 	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
 	FBox2D bbox;
+	UPROPERTY(VisibleAnywhere, BlueprintReadonly, Transient)
+	UTexture2D* image = nullptr;
 	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
-	UTexture2D* image;
-	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
-	int32 order;
+	int32 order = -1;
 	inline bool IsPointInside(const FVector2D& pt) const
 	{
 		if (!bbox.IsInside(pt)) return false;
@@ -75,10 +80,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadonly, DisplayName = "Stimulus")
 		class AStimulus* stimulus;
-
-protected:
-	UFUNCTION()
-		void RecordingMenu_CreateList();
 
 	//----------------------- SciVi networking --------------
 public:

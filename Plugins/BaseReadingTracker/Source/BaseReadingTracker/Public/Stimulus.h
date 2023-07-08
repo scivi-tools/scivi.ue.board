@@ -30,8 +30,10 @@ public:
     AStimulus(const FObjectInitializer& ObjectInitializer);
     virtual void BeginPlay() override;
     void UpdateStimulus(const UTexture2D* texture, float sx = 1.0f, float sy = 1.0f, 
-                        const TArray<FAOI>& newAOIs = TArray<FAOI>(), bool notify_scivi = false);
+                        const TArray<UAOI*>& newAOIs = TArray<UAOI*>(), bool notify_scivi = false);
     void UpdateContours();
+    UFUNCTION(BlueprintCallable)
+    TArray<const UAOI*> GetSelectedAOIs() const;
     UFUNCTION(BlueprintCallable)
     void ClearSelectedAOIs();
     UFUNCTION(BlueprintCallable)
@@ -39,9 +41,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     float StimulusMargin = 20.0f;
     UFUNCTION(BlueprintImplementableEvent)
-    void OnHoverAOI(const FAOI& aoi);
+    void OnHoverAOI(const UAOI* aoi);
     UFUNCTION(BlueprintImplementableEvent)
-    void OnLeaveAOI(const FAOI& aoi);
+    void OnLeaveAOI(const UAOI* aoi);
 
     void NotifyScivi_ImageUpdated();
     // ----------------- InteractableActor interface -------------
@@ -52,9 +54,9 @@ public:
     virtual void InFocusByController(const FHitResult& hit_result) override;
     //------------------------------------------------------------
 
-    TArray<FAOI> AOIs;
-    TArray<const FAOI*> SelectedAOIs;
-    const FAOI* hoveredAOI = nullptr;
+    TArray<UAOI*> AOIs;
+    TArray<const UAOI*> SelectedAOIs;
+    const UAOI* hoveredAOI = nullptr;
     UPROPERTY(BlueprintReadonly, EditAnywhere)
     AOISelectionStrategy SelectionStrategy = AOISelectionStrategy::FromClickToClick;
 
@@ -84,13 +86,15 @@ protected:
     void drawContour(UCanvas* cvs, int32 w, int32 h);
     void strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, float thickness, const FLinearColor& color) const;
     void fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, const FLinearColor& color) const;
-    void drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const FAOI* aoi) const;
-    void toggleSelectedAOI(const FAOI* aoi);
-    inline int32 IndexOfAOI(const FAOI* aoi) const 
-    {  return aoi - AOIs.GetData();   }
+    void drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const UAOI* aoi) const;
+    void toggleSelectedAOI(const UAOI* aoi);
+    inline int32 IndexOfAOI(const UAOI* aoi) const 
+    {
+        return AOIs.IndexOfByKey(aoi);
+    }
 
     //collision detection
-    FAOI* findAOI(const FVector2D& pt, int& out_index) const;
+    UAOI* findAOI(const FVector2D& pt, int& out_index) const;
 
     class ABaseInformant* informant = nullptr;
 
