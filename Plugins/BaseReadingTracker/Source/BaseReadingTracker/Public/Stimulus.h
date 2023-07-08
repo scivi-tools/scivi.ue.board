@@ -48,7 +48,7 @@ public:
     virtual void OnPressedByTrigger(const FHitResult& hitResult) override;
     virtual void OnReleasedByTrigger(const FHitResult& hitResult) override;
     //eye track interaction
-    virtual void ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitResult) override;
+    virtual void ProcessEyeTrack(const FGaze& gaze) override;
     virtual void InFocusByController(const FHitResult& hit_result) override;
     //------------------------------------------------------------
 

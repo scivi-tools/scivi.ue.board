@@ -303,7 +303,7 @@ void AReadingTrackerGameMode::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, 
 		"\"Action\": \"%s\"}"),
 		uv.X, uv.Y,
 		gaze.origin.X, gaze.origin.Y, gaze.origin.Z,
-		gaze.target.X, gaze.target.Y, gaze.target.Z,
+		gaze.target.Location.X, gaze.target.Location.Y, gaze.target.Location.Z,
 		gaze.left_pupil_diameter_mm, gaze.right_pupil_diameter_mm, gaze.cf, AOI_index, *Id);
 	SendToSciVi(json);
 }

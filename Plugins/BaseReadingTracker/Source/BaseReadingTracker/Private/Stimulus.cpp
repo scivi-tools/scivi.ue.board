@@ -179,13 +179,13 @@ void AStimulus::Reset()
 	UpdateStimulus(DefaultTexture);
 }
 
-void AStimulus::ProcessEyeTrack(const FGaze& gaze, const FHitResult& hitPoint)
+void AStimulus::ProcessEyeTrack(const FGaze& gaze)
 {
-	Super::ProcessEyeTrack(gaze, hitPoint);
-	if (hitPoint.Component == Stimulus)
+	Super::ProcessEyeTrack(gaze);
+	if (gaze.target.Component == Stimulus)
 	{
 		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
-		FVector2D uv = sceneToBillboard(hitPoint.Location);
+		FVector2D uv = sceneToBillboard(gaze.target.Location);
 		int currentAOIIndex = -1;
 		auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
 		GM->SendGazeToSciVi(gaze, uv, currentAOIIndex, TEXT("LOOKAT"));
