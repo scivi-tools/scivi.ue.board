@@ -117,11 +117,18 @@ void AStimulus::BeginPlay()
 	m_staticTransform = Stimulus->GetRelativeTransform();
 }
 
-void AStimulus::UpdateStimulus(const UTexture2D* texture, float sx, float sy,
-	const TArray<UAOI*>& newAOIs, bool notify_scivi)
+void AStimulus::PrepareForNewImage()
+{
+	Reset();
+	OnPrepareForNewImage();
+}
+
+void AStimulus::UpdateStimulus(const UTexture2D* texture, const TArray<UAOI*>& newAOIs,
+	float sx, float sy, bool notify_scivi)
 {
 	AOIs = newAOIs;
 	SelectedAOIs.Empty();
+	PolyToDraw.Empty();
 
 	SetActorScale3D(FVector(1.0f, sx, sy));
 	// set new image
@@ -143,6 +150,7 @@ void AStimulus::UpdateStimulus(const UTexture2D* texture, float sx, float sy,
 	m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
 	if (notify_scivi)
 		NotifyScivi_ImageUpdated();
+	OnImageUpdated();
 }
 
 void AStimulus::UpdateContours()
@@ -179,20 +187,21 @@ void AStimulus::ClearSelectedAOIs()
 		GM->SendGazeToSciVi(gaze, uv, aoi_index, TEXT("SELECT"));//this unselect selected in sciVi
 	}
 	SelectedAOIs.Empty();
+	PolyToDraw.Empty();
 	UpdateContours();
 }
 
 void AStimulus::Reset()
 {
-	UpdateStimulus(DefaultTexture);
+	UpdateStimulus(DefaultTexture, TArray<UAOI*>());
 }
 
 void AStimulus::ProcessEyeTrack(const FGaze& gaze)
 {
 	Super::ProcessEyeTrack(gaze);
-	if (gaze.target.Component == Stimulus)
+	auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
+	if (gaze.target.Component == Stimulus && GM->IsExperimentStarted())
 	{
-		auto GM = GetWorld()->GetAuthGameMode<AReadingTrackerGameMode>();
 		FVector2D uv = sceneToBillboard(gaze.target.Location);
 		int currentAOIIndex = -1;
 		auto lookedAOI = findAOI(FVector2D(uv.X * image->GetSizeX(), uv.Y * image->GetSizeY()), currentAOIIndex);
@@ -216,12 +225,12 @@ void AStimulus::InFocusByController(const FHitResult& hit_result)
 		if (!GM->informant->MC_Right->bHiddenInGame)
 		{
 			auto selectedAOI = findAOI(FVector2D(m_laser.X * image->GetSizeX(), m_laser.Y * image->GetSizeY()), currentAOIIndex);
-			if (selectedAOI)
+			if (IsValid(selectedAOI))
 			{
 				hoveredAOI = selectedAOI;
 				OnHoverAOI(hoveredAOI);
 			}
-			else if (hoveredAOI)
+			else if (IsValid(hoveredAOI))
 			{
 				OnLeaveAOI(hoveredAOI);
 				hoveredAOI = nullptr;
@@ -284,6 +293,7 @@ void AStimulus::OnPressedByTrigger(const FHitResult& hitPoint)
 				{
 					toggleSelectedAOI(SelectedAOIs[0]);
 					GM->SendGazeToSciVi(gaze, m_laser, IndexOfAOI(SelectedAOIs[0]), TEXT("UNSELECT"));
+					checkf(SelectedAOIs.Num() == 0, TEXT("SelectedAOIs not empty"));
 				}
 
 				toggleSelectedAOI(const_cast<const UAOI*>(selectedAOI));
@@ -298,7 +308,7 @@ void AStimulus::OnPressedByTrigger(const FHitResult& hitPoint)
 				}
 			}
 		}
-		UpdateContours();
+
 		GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_PRESS"));
 	}
 }
@@ -320,9 +330,8 @@ void AStimulus::OnReleasedByTrigger(const FHitResult& hitResult)
 				auto selectedAOI = SelectedAOIs[0];
 				currentAOIIndex = IndexOfAOI(selectedAOI);
 				toggleSelectedAOI(SelectedAOIs[0]);
-				GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_UNSELECT"));
+				GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("UNSELECT"));
 			}
-			UpdateContours();
 			GM->SendGazeToSciVi(gaze, m_laser, currentAOIIndex, TEXT("R_RELEASE"));
 		}
 	}
@@ -361,10 +370,23 @@ void AStimulus::customCalibrate()
 
 void AStimulus::toggleSelectedAOI(const UAOI* aoi)
 {
-	if (SelectedAOIs.Contains(aoi))
-		SelectedAOIs.Remove(aoi);
-	else
-		SelectedAOIs.Add(aoi);
+	if (IsValid(aoi))
+	{
+		int index = SelectedAOIs.IndexOfByKey(aoi);
+		if (index != INDEX_NONE)
+		{
+			SelectedAOIs.RemoveAtSwap(index);
+			PolyToDraw.RemoveAtSwap(index);
+		}
+		else
+		{
+			SelectedAOIs.Add(aoi);
+			PolyToDraw.Add(aoi->path);
+		}
+		UpdateContours();
+	}
+	else if (GEngine)
+		GEngine->AddOnScreenDebugMessage(rand(), 10, FColor::Red, TEXT("Deleted AOI in toggleSelectedAOI"));
 }
 
 void AStimulus::strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, float thickness, const FLinearColor& color) const
@@ -385,15 +407,17 @@ void AStimulus::fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, con
 	cvs->K2_DrawPolygon(nullptr, pos, FVector2D(radius), 16, color);
 }
 
-void AStimulus::drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const UAOI* aoi) const
+/// Stroke this polygon on canvas
+void AStimulus::strokePolygon(UCanvas* cvs, const FPolygon2D& poly, const FLinearColor& color, float th)
 {
-	FVector2D pt = aoi->path[0];
-	for (int i = 1, n = aoi->path.Num(); i < n; ++i)
+	const auto& vertices = poly.GetVertices();
+	FVector2D last = vertices[0];
+	for (int i = 1, n = vertices.Num(); i < n; ++i)
 	{
-		cvs->K2_DrawLine(pt, aoi->path[i], th, color);
-		pt = aoi->path[i];
+		cvs->K2_DrawLine(last, vertices[i], th, color);
+		last = vertices[i];
 	}
-	cvs->K2_DrawLine(pt, aoi->path[0], th, color);
+	cvs->K2_DrawLine(last, vertices[0], th, color);
 }
 
 void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
@@ -405,13 +429,13 @@ void AStimulus::drawContour(UCanvas* cvs, int32 w, int32 h)
 	strokeCircle(cvs, FVector2D(m_camTarget.X * image->GetSizeX(), m_camTarget.Y * image->GetSizeY()), 2.0f * th, th, FLinearColor(1, 0, 1, 1));
 #else
 	float th = FMath::Max(FMath::RoundToFloat((float)FMath::Max(image->GetSizeX(), image->GetSizeY()) * 0.0025f), 1.0f);
-	for (auto aoi : SelectedAOIs)
-		drawContourOfAOI(cvs, FLinearColor(0, 0.2, 0, 1), th, aoi);
-#endif // EYE_DEBUG
+
+	for (auto&& poly : PolyToDraw)
+		strokePolygon(cvs, poly, FLinearColor(0, 0.2, 0, 1), th);
 
 	if (m_customCalibPhase != CalibPhase::None && m_customCalibPhase != CalibPhase::Done)
 		fillCircle(cvs, FVector2D(m_customCalibTarget.location.X * image->GetSizeX(), m_customCalibTarget.location.Y * image->GetSizeY()), m_customCalibTarget.radius, FLinearColor(0, 0, 0, 1));
-
+#endif
 #ifdef EYE_DEBUG
 	fillCircle(cvs, GazeUV * FVector2D(image->GetSizeX(), image->GetSizeY()), 5.0f, FColor::Black);
 #endif
@@ -440,10 +464,10 @@ UAOI* AStimulus::findAOI(const FVector2D& pt, int& out_index) const
 	out_index = -1;
 	UAOI* result = nullptr;
 	for (int i = 0; i < AOIs.Num(); ++i)
-		if (AOIs[i]->IsPointInside(pt) && (!result || result->bbox.GetArea() > AOIs[i]->bbox.GetArea()))
+		if (AOIs[i]->IsPointIn(pt) && (!result || result->path.GetBBox().GetArea() > AOIs[i]->path.GetBBox().GetArea()))
 		{
 			out_index = i;
-			result = (UAOI*)(AOIs.GetData() + i);
+			result = const_cast<UAOI*>(AOIs[i]);
 		}
 	return result;
 }
@@ -726,30 +750,3 @@ void AStimulus::applyCustomCalib(const FVector& gazeOrigin, const FVector& gazeT
 	}
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

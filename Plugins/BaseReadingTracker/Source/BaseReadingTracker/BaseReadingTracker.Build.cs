@@ -8,10 +8,10 @@ public class BaseReadingTracker : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		bEnableExceptions = true;
-		Definitions.Add("_USE_SCIVI_CONNECTION_");
+		PublicDefinitions.Add("_USE_SCIVI_CONNECTION_");
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "VRExperimentsBase", "UMG" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "SRanipal", "SRanipalEye", "HeadMountedDisplay", "Json", "JsonUtilities", });
+		PrivateDependencyModuleNames.AddRange(new string[] { "SRanipal", "SRanipalEye", "HeadMountedDisplay", "Json", "JsonUtilities" });
 
 		PrivateIncludePaths.AddRange(new string[] {
 			"../../VRExperimentsBase/Source/ThirdPartyLibs",

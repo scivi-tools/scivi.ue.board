@@ -115,7 +115,8 @@ void AReadingTrackerGameMode::OnSciViMessageReceived(TSharedPtr<FJsonObject> msg
 {
 	Super::OnSciViMessageReceived(msgJson);
 	if (msgJson->TryGetField("customCalibrate")) stimulus->customCalibrate();
-	else 
+	else if (msgJson->TryGetField("NextImage")) stimulus->PrepareForNewImage();
+	else
 		ParseNewImage(msgJson);
 }
 
@@ -149,7 +150,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 		int last_id = 0;
 		for (auto& aoi_text : json->GetArrayField("AOIs"))
 		{
-			UAOI* aoi = NewObject<UAOI>(stimulus, UAOI::StaticClass(), NAME_Default);
+			UAOI* aoi = NewObject<UAOI>();
 			aoi->id = last_id++;
 			auto nameField = aoi_text->AsObject()->TryGetField("name");
 			if (nameField)
@@ -164,17 +165,17 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 			{
 				auto& path = pathField->AsArray();
 				for (auto& point : path)
-					aoi->path.Add(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
+					aoi->path.AddVertex(FVector2D(point->AsArray()[0]->AsNumber(), point->AsArray()[1]->AsNumber()));
 			}
 			auto bboxField = aoi_text->AsObject()->TryGetField("bbox");
 			if (bboxField)
 			{
 				auto& bbox = bboxField->AsArray();
-				aoi->bbox = FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
-					FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber()));
+				aoi->path.SetBounding(FBox2D(FVector2D(bbox[0]->AsNumber(), bbox[1]->AsNumber()),
+					FVector2D(bbox[2]->AsNumber(), bbox[3]->AsNumber())));
 			}
-			auto size = aoi->bbox.GetSize();
-			auto start = aoi->bbox.Min;
+			auto size = aoi->path.GetBBox().GetSize();
+			auto start = aoi->path.GetBBox().Min;
 			aoi->image = UTexture2D::CreateTransient(size.X, size.Y);
 			aoi->image->AddToRoot();
 			CopyTexture2DFragment(aoi->image, texture, start.X, start.Y, size.X, size.Y);
@@ -197,39 +198,13 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 			AOIs.Add(aoi);
 		}
 		if (IsValid(texture))
-			stimulus->UpdateStimulus(texture, sx, sy, AOIs, true);
+			stimulus->UpdateStimulus(texture, AOIs, sx, sy, true);
+		AOIs.Empty();
 		UE_LOG(LogTemp, Display, TEXT("New Image parsed"));
 	}
 }
 
-void AReadingTrackerGameMode::SendWallLogToSciVi(EWallLogAction Action, const FString& WallName, int AOI_index, const FString& AOI)
-{
-	FString msg;
-	FString ActionStr;
-	switch (Action)
-	{
-	case EWallLogAction::NewWall: ActionStr = TEXT("NewWall"); break;
-	case EWallLogAction::DeleteWall: ActionStr = TEXT("DeleteWall"); break;
-	case EWallLogAction::AddAOI: ActionStr = TEXT("AddAOI"); break;
-	case EWallLogAction::RemoveAOI: ActionStr = TEXT("RemoveAOI"); break;
-	default: ActionStr = TEXT("UnknownAction"); break;
-	}
-	if (Action == EWallLogAction::NewWall || Action == EWallLogAction::DeleteWall)
-	{
-		msg = FString::Printf(TEXT("\"WallLog\": {"
-			"\"Action\": \"%s\","
-			"\"Wall\": \"%s\"}"), *ActionStr, *WallName);
-	}
-	else
-	{
-		msg = FString::Printf(TEXT("\"WallLog\": {"
-			"\"Action\": \"%s\","
-			"\"Wall\": \"%s\","
-			"\"AOI_index\": %i,"
-			"\"AOI\": \"%s\"}"), *ActionStr, *WallName, AOI_index, *AOI);
-	}
-	SendToSciVi(msg);
-}
+
 
 void AReadingTrackerGameMode::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id)
 {

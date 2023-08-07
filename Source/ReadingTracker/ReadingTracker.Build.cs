@@ -8,7 +8,7 @@ public class ReadingTracker : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		bEnableExceptions = true;
-		Definitions.Add("_USE_SCIVI_CONNECTION_");
+		PublicDefinitions.Add("_USE_SCIVI_CONNECTION_");
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "VRExperimentsBase", "BaseReadingTracker" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {"SRanipal", "SRanipalEye", "HeadMountedDisplay", "Json", "JsonUtilities", });

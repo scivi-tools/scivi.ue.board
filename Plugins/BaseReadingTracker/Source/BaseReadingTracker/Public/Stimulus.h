@@ -29,8 +29,8 @@ public:
     //----------------- API ---------------------
     AStimulus(const FObjectInitializer& ObjectInitializer);
     virtual void BeginPlay() override;
-    void UpdateStimulus(const UTexture2D* texture, float sx = 1.0f, float sy = 1.0f, 
-                        const TArray<UAOI*>& newAOIs = TArray<UAOI*>(), bool notify_scivi = false);
+    void UpdateStimulus(const UTexture2D* texture, const TArray<UAOI*>& newAOIs, 
+                float sx = 1.0f, float sy = 1.0f, bool notify_scivi = false);
     void UpdateContours();
     UFUNCTION(BlueprintCallable)
     TArray<const UAOI*> GetSelectedAOIs() const;
@@ -45,6 +45,13 @@ public:
     UFUNCTION(BlueprintImplementableEvent)
     void OnLeaveAOI(const UAOI* aoi);
 
+    void PrepareForNewImage();
+
+    UFUNCTION(BlueprintImplementableEvent)
+    void OnPrepareForNewImage();
+    UFUNCTION(BlueprintImplementableEvent)
+    void OnImageUpdated();
+
     void NotifyScivi_ImageUpdated();
     // ----------------- InteractableActor interface -------------
     virtual void OnPressedByTrigger(const FHitResult& hitResult) override;
@@ -54,9 +61,16 @@ public:
     virtual void InFocusByController(const FHitResult& hit_result) override;
     //------------------------------------------------------------
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadonly)
     TArray<UAOI*> AOIs;
+    UPROPERTY()
     TArray<const UAOI*> SelectedAOIs;
+    UPROPERTY()
+    TArray<FPolygon2D> PolyToDraw;
+    UPROPERTY()
     const UAOI* hoveredAOI = nullptr;
+   /* UPROPERTY()
+    TArray<TPolygon2>*/
     UPROPERTY(BlueprintReadonly, EditAnywhere)
     AOISelectionStrategy SelectionStrategy = AOISelectionStrategy::FromClickToClick;
 
@@ -82,16 +96,14 @@ protected:
     FVector2D sceneToBillboard(const FVector& pos) const;
 
     //draw functions
+    void strokePolygon(UCanvas* cvs, const FPolygon2D& poly, const FLinearColor& color, float th);
     UFUNCTION()
     void drawContour(UCanvas* cvs, int32 w, int32 h);
     void strokeCircle(UCanvas* cvs, const FVector2D& pos, float radius, float thickness, const FLinearColor& color) const;
     void fillCircle(UCanvas* cvs, const FVector2D& pos, float radius, const FLinearColor& color) const;
-    void drawContourOfAOI(UCanvas* cvs, const FLinearColor& color, float th, const UAOI* aoi) const;
     void toggleSelectedAOI(const UAOI* aoi);
     inline int32 IndexOfAOI(const UAOI* aoi) const 
-    {
-        return AOIs.IndexOfByKey(aoi);
-    }
+    {  return aoi->id;   }
 
     //collision detection
     UAOI* findAOI(const FVector2D& pt, int& out_index) const;

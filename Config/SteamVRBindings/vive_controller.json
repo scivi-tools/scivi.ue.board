@@ -24,6 +24,17 @@
 				},
 				{
 					"mode": "trigger",
+					"path": "/user/hand/left/input/trigger",
+					"inputs":
+					{
+						"click":
+						{
+							"output": "/actions/main/in/RController_Trigger"
+						}
+					}
+				},
+				{
+					"mode": "trigger",
 					"path": "/user/hand/right/input/trigger",
 					"inputs":
 					{
