@@ -33,7 +33,7 @@ public:
                 float sx = 1.0f, float sy = 1.0f, bool notify_scivi = false);
     void UpdateContours();
     UFUNCTION(BlueprintCallable)
-    TArray<const UAOI*> GetSelectedAOIs() const;
+    TArray<const UAOI*>& GetSelectedAOIs() &;
     UFUNCTION(BlueprintCallable)
     void ClearSelectedAOIs();
     UFUNCTION(BlueprintCallable)

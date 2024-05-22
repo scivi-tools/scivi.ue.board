@@ -75,7 +75,7 @@ public:
 	UAOI() = default;
 	UAOI(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer) {}
 	UPROPERTY()
-	FPolygon2D path;//polygon
+		FPolygon2D path;//polygon
 	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
 		int id = -1;
 	UPROPERTY(VisibleAnywhere, BlueprintReadonly)
@@ -149,4 +149,5 @@ public:
 protected:
 	virtual void OnSciViMessageReceived(TSharedPtr<FJsonObject> msgJson) override;
 	void ParseNewImage(const TSharedPtr<FJsonObject>& json);
+	virtual void OnResetExperimentSteps() override;
 };

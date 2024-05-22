@@ -158,12 +158,14 @@ void AStimulus::UpdateContours()
 	m_dynContour->UpdateResource();
 }
 
-TArray<const UAOI*> AStimulus::GetSelectedAOIs() const
+//const TArray<const UAOI*>& AStimulus::GetSelectedAOIs() const &
+//{
+//	return SelectedAOIs;
+//}
+
+TArray<const UAOI*>& AStimulus::GetSelectedAOIs() &
 {
-	TArray<const UAOI*> result;
-	for (auto* aoi : SelectedAOIs)
-		result.Add(aoi);
-	return result;
+	return SelectedAOIs;
 }
 
 void AStimulus::ClearSelectedAOIs()
