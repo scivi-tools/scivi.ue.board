@@ -204,6 +204,14 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 	}
 }
 
+void AReadingTrackerGameMode::OnResetExperimentSteps()
+{
+	if (IsValid(stimulus))
+	{
+		stimulus->Reset();
+	}
+}
+
 
 
 void AReadingTrackerGameMode::SendGazeToSciVi(const FGaze& gaze, FVector2D& uv, int AOI_index, const FString& Id)
