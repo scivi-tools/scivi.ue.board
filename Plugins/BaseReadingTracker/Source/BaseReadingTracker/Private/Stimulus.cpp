@@ -124,7 +124,7 @@ void AStimulus::PrepareForNewImage()
 }
 
 void AStimulus::UpdateStimulus(const UTexture2D* texture, const TArray<UAOI*>& newAOIs,
-	float sx, float sy, bool notify_scivi)
+	float sx, float sy, bool call_events, bool notify_scivi)
 {
 	AOIs = newAOIs;
 	SelectedAOIs.Empty();
@@ -148,9 +148,12 @@ void AStimulus::UpdateStimulus(const UTexture2D* texture, const TArray<UAOI*>& n
 
 	m_staticTransform = Stimulus->GetRelativeTransform();
 	m_staticExtent = Stimulus->CalcLocalBounds().BoxExtent;
-	if (notify_scivi)
-		NotifyScivi_ImageUpdated();
-	OnImageUpdated();
+	if (call_events)
+	{
+		if (notify_scivi)
+			NotifyScivi_ImageUpdated();
+		OnImageUpdated();
+	}
 }
 
 void AStimulus::UpdateContours()
@@ -191,7 +194,7 @@ void AStimulus::ClearSelectedAOIs()
 
 void AStimulus::Reset()
 {
-	UpdateStimulus(DefaultTexture, TArray<UAOI*>());
+	UpdateStimulus(DefaultTexture, TArray<UAOI*>(), 1.0f, 1.0f, false);
 }
 
 void AStimulus::ProcessEyeTrack(const FGaze& gaze)

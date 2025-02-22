@@ -30,7 +30,7 @@ public:
     AStimulus(const FObjectInitializer& ObjectInitializer);
     virtual void BeginPlay() override;
     void UpdateStimulus(const UTexture2D* texture, const TArray<UAOI*>& newAOIs, 
-                float sx = 1.0f, float sy = 1.0f, bool notify_scivi = false);
+                float sx = 1.0f, float sy = 1.0f, bool call_events = true, bool notify_scivi = false);
     void UpdateContours();
     UFUNCTION(BlueprintCallable)
     void GetSelectedAOIs(TArray<UAOI*>& Result) const;

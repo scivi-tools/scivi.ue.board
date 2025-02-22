@@ -198,7 +198,7 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 			AOIs.Add(aoi);
 		}
 		if (IsValid(texture))
-			stimulus->UpdateStimulus(texture, AOIs, sx, sy, true);
+			stimulus->UpdateStimulus(texture, AOIs, sx, sy, true, true);
 		AOIs.Empty();
 		UE_LOG(LogTemp, Display, TEXT("New Image parsed"));
 	}
@@ -206,10 +206,6 @@ void AReadingTrackerGameMode::ParseNewImage(const TSharedPtr<FJsonObject>& json)
 
 void AReadingTrackerGameMode::OnResetExperimentSteps()
 {
-	if (IsValid(stimulus))
-	{
-		stimulus->Reset();
-	}
 }
 
 
